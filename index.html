@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Tutor de matemática financeira com diagnóstico, mapa de conceitos e prática guiada.">
+  <title>Juros em Jogo | Matemática Financeira</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="dominio.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-content">
+      <a class="brand" href="./index.html" aria-label="Juros em Jogo, início">
+        <span class="brand-mark" aria-hidden="true">%</span>
+        <span>Juros em Jogo</span>
+      </a>
+      <span class="course">Matemática Financeira</span>
+    </div>
+  </header>
+  <main class="wrap">
+    <div class="intro">
+      <h1>Matemática financeira</h1>
+      <p>Explore os conceitos e pratique seu raciocínio com o tutor.</p>
+    </div>
+    <div class="workspace">
+      <section class="panel map-panel" aria-labelledby="map-title">
+        <div class="panel-heading">
+          <div><h2 id="map-title">Mapa de conceitos</h2><p id="map-caption">Faça o diagnóstico para descobrir por onde começar.</p></div>
+          <span id="mastered" class="pill" hidden></span>
+        </div>
+        <div class="map-scroll" tabindex="0" role="region" aria-label="Mapa rolável de conceitos">
+          <div class="map" id="map">
+            <canvas id="edges" aria-hidden="true"></canvas>
+          </div>
+        </div>
+        <ul class="legend" aria-label="Legenda do mapa">
+          <li><span class="dot initial"></span>Iniciante</li>
+          <li><span class="dot progressing"></span>Em progresso</li>
+          <li><span class="dot mastered"></span>Dominado</li>
+        </ul>
+      </section>
+      <section class="panel activity-panel" id="activity" aria-label="Área de estudo"></section>
+    </div>
+  </main>
+  <footer class="wrap footer">IA Aplicada à Educação · IMD0511</footer>
+</body>
+</html>
