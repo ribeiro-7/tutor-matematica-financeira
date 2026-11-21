@@ -98,7 +98,7 @@ const Dominio = (() => {
       [`Qual é a taxa percentual equivalente a ${taxa}% ao mês por 2 meses em juros compostos?`, ((1 + taxa / 100) ** 2 - 1) * 100, 'Multiplique os dois fatores de crescimento e retire o 1 que representa o capital original.', `[(1 + ${numero(taxa / 100)})² − 1] × 100 = ${percentual(((1 + taxa / 100) ** 2 - 1) * 100)}.`],
       [`Uma compra tem duas parcelas de ${moeda(parcela)}, uma em 1 mês e outra em 2 meses. Com taxa de desconto de ${taxa}% ao mês, quanto valem as duas parcelas juntas hoje?`, hoje, 'Traga cada parcela separadamente para hoje. Use um período para a primeira e dois para a segunda.', `${moeda(parcela)} ÷ ${numero(1 + taxa / 100)} + ${moeda(parcela)} ÷ (${numero(1 + taxa / 100)})² = ${moeda(hoje)} em valor presente.`],
       [`Um investimento rende ${taxa}% no ano, com inflação de ${inflacao}%. Qual é o juro real em porcentagem? Arredonde a duas casas.`, arredondar(((1 + taxa / 100) / (1 + inflacao / 100) - 1) * 100), 'Divida o fator de crescimento do investimento pelo fator de crescimento dos preços.', `[(1 + ${numero(taxa / 100)}) ÷ (1 + ${numero(inflacao / 100)}) − 1] × 100 ≈ ${casas(((1 + taxa / 100) / (1 + inflacao / 100) - 1) * 100)}%.`],
-      [`Uma compra custa ${moeda(precoVista)} à vista ou duas parcelas de ${moeda(parcela)}, em 1 e 2 meses. Com taxa de ${taxa}% ao mês, qual é o custo da opção mais barata, em valor de hoje?`, Math.min(precoVista, hoje), 'Traga as parcelas para o dia de hoje antes de comparar com o preço à vista.', `O preço à vista é ${moeda(precoVista)}. O valor presente das parcelas é ${moeda(hoje)}. A opção mais barata é ${precoVista < hoje ? 'à vista' : 'parcelada'}, por ${moeda(Math.min(precoVista, hoje))} em valor de hoje.`],
+      [`Uma compra custa ${moeda(precoVista)} à vista ou duas parcelas de ${moeda(parcela)}, em 1 e 2 meses. Com taxa de ${taxa}% ao mês, qual é o custo da opção mais barata, em valor de hoje? Se quiser, explique sua escolha.`, Math.min(precoVista, hoje), 'Traga as parcelas para o dia de hoje antes de comparar com o preço à vista.', `O preço à vista é ${moeda(precoVista)}. O valor presente das parcelas é ${moeda(hoje)}. A opção mais barata é ${precoVista < hoje ? 'à vista' : 'parcelada'}, por ${moeda(Math.min(precoVista, hoje))} em valor de hoje.`],
     ];
     const [enunciado, resposta, dica, resolucao, erroTipico] = respostas[id - 1];
     return { enunciado, resposta, dica, resolucao, erroTipico };
@@ -110,18 +110,78 @@ const Dominio = (() => {
     formaliza: 'Cada mês multiplica o saldo por 1,10. Generalizando, M = C × (1 + i)ᵗ. C é o capital inicial, i é a taxa em decimal e t conta os períodos em que o fator se repete.',
   };
 
-  function interpretarTentativa(texto) {
-    const tentativa = texto.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
-    const valores = (tentativa.match(/\d+(?:[.,]\d+)*/g) || []).map(lerNumero);
-    const saldoVariavel = /(?:saldo|base).{0,22}(?:muda|vari|atual|anterior)|juros sobre juros|capitaliz|multiplic.{0,24}1[,.]10/.test(tentativa);
-    const fixo = /empat|iguais|mesm[oa] (?:saldo|valor)|100 (?:a cada|todo|por) mes/.test(tentativa);
-    if (saldoVariavel || valores.includes(1331)) return 'variavel';
-    if (fixo || (valores.includes(1300) && !valores.includes(1210))) return 'fixo';
-    if (valores.includes(1210) || valores.includes(110)) return 'intermediario';
-    return 'outra';
+  const tiposComuns = Object.freeze([
+    'conceito', 'procedimento', 'metodo', 'equivoco', 'tentativa', 'ajuda', 'duvida', 'ambigua', 'fora',
+  ]);
+  const tiposC9 = Object.freeze([
+    ...tiposComuns, 'fixo', 'variavel', 'intermediario', 'palpite', 'saldo', 'taxa', 'prazo', 'compostos',
+  ]);
+  const tiposChat = (id) => id === 9 ? tiposC9 : tiposComuns;
+
+  const explicacoes = [
+    'Porcentagem é uma razão por cem. Primeiro identifique qual quantidade representa o total.',
+    'Potenciação repete uma multiplicação. A base indica o fator e o expoente diz quantas vezes ele aparece.',
+    'Acréscimos e descontos são calculados sobre um preço de referência. Identifique o preço original antes de aplicar a taxa.',
+    'O capital é o valor inicial. Os juros são o que se acrescenta a ele. O montante é a soma do capital com os juros.',
+    'O período da taxa indica de quanto em quanto tempo ela é aplicada. Se a taxa é mensal, conte meses no prazo. Um ano tem 12 meses.',
+    'Em juros simples, cada período acrescenta a mesma fração do capital inicial.',
+    'O montante em juros simples inclui o capital inicial e os juros de todos os períodos.',
+    'Em juros compostos, o saldo de um período inclui os juros já ganhos. Esse saldo vira a base do período seguinte.',
+    'O montante é o saldo final. Em juros compostos, cada período usa como base o saldo do início desse período.',
+    'Com o mesmo capital e taxa, compare como o saldo cresce. Nos juros simples, o acréscimo fica fixo. Nos compostos, ele acompanha o saldo.',
+    'Taxas equivalentes produzem o mesmo crescimento ao longo do mesmo prazo. Em juros compostos, compare os fatores de crescimento.',
+    'Valor presente é quanto uma parcela futura vale hoje. Cada parcela tem seu próprio prazo até o vencimento.',
+    'O juro real mede a mudança no poder de compra. Compare o crescimento do dinheiro com o crescimento dos preços.',
+    'Para decidir entre pagar à vista e parcelar, compare os custos na mesma data. Traga cada parcela para o valor de hoje antes de somar.',
+  ];
+  const explicarConceito = (id) => explicacoes[id - 1];
+
+  function numerosNoTexto(texto) {
+    const partes = texto.match(/[+-]?\d+(?:[.,]\d+)*/g) || [];
+    return partes.map(lerNumero).filter((valor) => valor !== null);
   }
 
-  return { conceitos, diagnostico, estado, rotulos, pontuar, pendentes, sugerir, confere, lerNumero, problema, desafio, interpretarTentativa };
+  function interpretarC9Local(texto, fase) {
+    const mensagem = texto.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim();
+    const valores = numerosNoTexto(mensagem);
+    const pergunta = /\?|^(?:o que|qual|quanto|como|por que|pode me)\b/.test(mensagem);
+    if (/\b(?:chutei|chute|palpite|so adivinhei)\b/.test(mensagem)) return 'palpite';
+    if (/\b(?:nao sei por onde|travei|estou perdid[oa]|me ajuda|uma dica)\b/.test(mensagem)
+      || (valores.length === 0 && /^(?:nao sei|nao entendi)\b/.test(mensagem))) return 'ajuda';
+    if (pergunta) {
+      if (/\b(?:o que (?:e|significa)|defina)\s+(?:o\s+)?saldo\b/.test(mensagem)) return 'saldo';
+      if (/\b(?:prazo|periodo|quantos meses)\b/.test(mensagem)) return 'prazo';
+      if (/\b(?:porcentagem|decimal|taxa|percentual)\b/.test(mensagem)) return 'taxa';
+      if (/\b(?:compostos|juros sobre juros|capitalizacao|montante)\b/.test(mensagem)) return 'compostos';
+      if (/^(?:o que|qual|quanto|como|por que|pode|e se)\b/.test(mensagem)) return 'duvida';
+    }
+    if (/\b(?:saldo|base)\b.{0,28}\b(?:muda|variavel|atual|atualizado|anterior)\b|juros sobre juros|sobre o que ja juntou|sobre o saldo de cada mes|sobre o saldo do mes anterior/.test(mensagem)) return 'variavel';
+    if (!/\b(?:nao|nunca)\b/.test(mensagem) && /\b(?:empat\w*|iguais|mesm[oa] (?:saldo|valor)|100 (?:a cada|todo|por) mes)\b/.test(mensagem)) return 'fixo';
+    if (fase === 'exploracao') {
+      if (valores.includes(1210) || valores.includes(110)) return 'intermediario';
+      if (valores.includes(1300) && !valores.includes(1331)) return 'fixo';
+      if (valores.includes(1331) || /^(?:a (?:primeira|segunda)|opcao [ab])\b/.test(mensagem)) return 'palpite';
+    }
+    if (valores.length || /\b(?:somei|multipliquei|dividi|subtrai|calculei)\b/.test(mensagem)) return 'tentativa';
+    return pergunta ? 'duvida' : 'ambigua';
+  }
+
+  function interpretarLocal(id, texto, fase) {
+    if (id === 9) return interpretarC9Local(texto, fase);
+    const mensagem = texto.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim();
+    if (/\b(?:me ajuda|uma dica|travei|nao sei por onde|estou perdid[oa])\b/.test(mensagem)) return 'ajuda';
+    if (/(?:^|\b)(?:o que (?:e|significa)|qual (?:e )?a diferenca)\b/.test(mensagem)) return 'conceito';
+    if (/^(?:como|por que|qual|quanto|devo|eu devo|e se)\b/.test(mensagem)
+      || (/\?$/.test(mensagem) && /\b(?:multiplico|divido|som[oa]|subtraio)\b/.test(mensagem))) return 'procedimento';
+    if (id === 14 && numerosNoTexto(texto).length === 0) {
+      if (/valor presente|mesma data|trouxe (?:as|cada) parcela/.test(mensagem)) return 'metodo';
+      if (/(?:som(?:ei|o)|juntei).{0,24}parcelas/.test(mensagem)) return 'equivoco';
+    }
+    if (numerosNoTexto(texto).length || /\b(?:somei|multipliquei|dividi|subtrai|calculei)\b/.test(mensagem)) return 'tentativa';
+    return mensagem.endsWith('?') ? 'duvida' : 'ambigua';
+  }
+
+  return { conceitos, diagnostico, estado, rotulos, pontuar, pendentes, sugerir, confere, lerNumero, problema, desafio, tiposChat, numerosNoTexto, interpretarLocal, explicarConceito };
 })();
 
 if (typeof module !== 'undefined') module.exports = Dominio;

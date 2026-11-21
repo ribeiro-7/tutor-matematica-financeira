@@ -6,10 +6,17 @@ O tutor ajuda o estudante a entender a diferença entre juros simples e composto
 
 ## Como rodar
 
-1. Clone ou baixe este repositório.
-2. Abra o arquivo [`index.html`](index.html) em um navegador.
+**Modo local.** Abra o arquivo [`index.html`](index.html) no navegador. O tutor usa regras do JavaScript para interpretar as mensagens. O mesmo modo funciona ao rodar o servidor com a chave em branco.
 
-O protótipo usa HTML, CSS e JavaScript. Ele roda no próprio navegador, sem instalação, servidor ou chave de API. O chat responde com regras e mensagens predefinidas. As notas e o histórico ficam em memória durante a sessão e são reiniciados ao recarregar ou fechar a página.
+**Modo com Gemini.** Faça uma cópia de [`.env.example`](.env.example) chamada `.env` na pasta do projeto. Preencha `GEMINI_API_KEY=` com sua chave do Google AI Studio. O Git ignora o `.env`, e cada integrante mantém a própria chave. [Criar uma chave no Google AI Studio](https://aistudio.google.com/apikey)
+
+Com Node.js 22 ou superior, execute na pasta do projeto:
+
+```sh
+node servidor.js
+```
+
+Abra [http://127.0.0.1:3000](http://127.0.0.1:3000). Nos 14 chats, o Gemini classifica mensagens em texto livre e pode selecionar um trecho do que o estudante escreveu para retomar a dúvida ou a tentativa. O JavaScript valida o trecho, escolhe as dicas, confere o gabarito e atualiza a pontuação. Se faltar a chave, a consulta falhar ou o trecho for inválido, o tutor continua com a orientação local. As notas e o histórico são reiniciados ao recarregar ou fechar a página.
 
 ## Como funciona
 
@@ -23,13 +30,19 @@ Na prática, um acerto sem dica soma 15 pontos e um acerto com dica soma 7. O pr
 
 A estratégia **Desafios Produtivos** (*Productive Failure*) aparece na primeira prática de **C9 — Montante em juros compostos**. O estudante compara duas aplicações fictícias que chegam ao mesmo saldo no primeiro mês, mas seguem regras diferentes de acréscimo.
 
-1. **Exploração.** O tutor apresenta o problema e pede uma previsão ou uma explicação. Se necessário, oferece uma pergunta-guia sobre o saldo do segundo mês.
+1. **Exploração.** O tutor apresenta o problema e adapta a pergunta-guia ao raciocínio do aluno. Dúvidas de vocabulário e pedidos de ajuda recebem orientação sem contar como tentativas.
 2. **Consolidação.** O tutor retoma a tentativa, compara o acréscimo fixo com o acréscimo sobre o saldo atualizado e só então apresenta a fórmula `M = C × (1 + i)ᵗ`.
-3. **Prática.** Um problema com outros valores permite aplicar a ideia em uma nova situação. A exploração e a consolidação não alteram a nota do C9. A pontuação volta a ser aplicada nesse novo exercício.
+3. **Prática.** Um problema com outros valores permite aplicar a ideia em uma nova situação. A pontuação passa a ser avaliada nesse exercício.
 
-### Como testar o C9
+## Como testar
 
-Conclua o diagnóstico e selecione **C9 — Montante em juros compostos** no mapa. Se aparecer uma sugestão de revisão, clique em **Tentar mesmo assim**. Envie uma hipótese como **“Acho que as duas terminam com R$ 1.300”** e responda à pergunta-guia. Confira se o tutor relaciona a hipótese à solução antes de apresentar a fórmula. Em seguida, clique em **Praticar com outro exemplo** e confira se o exercício atualiza a nota no mapa.
+Conclua o diagnóstico. Se aparecer uma sugestão de revisão ao abrir um conceito, clique em **Tentar mesmo assim**. No modo com Gemini, confira se o tutor retoma um trecho do que você escreveu antes de dar a orientação.
+
+- **C5.** Pergunte “Multiplico ou divido por 12?”. Confira se a dica orienta a converter o prazo para a unidade da taxa e se a nota só muda depois da resposta.
+- **C9.** Pergunte “O que significa saldo?” e depois tente “As duas terminam com R$ 1.300 porque entram R$ 100 todo mês”. Confira se o tutor responde à dúvida, faz uma pergunta-guia e apresenta a fórmula na consolidação. A nota volta a ser avaliada em **Praticar com outro exemplo**.
+- **C14.** Diga “Somei as parcelas sem trazer os valores para hoje”. Confira se o tutor orienta a comparar na mesma data. Envie o custo calculado para testar a correção.
+
+Execute `node --test` para rodar os testes automatizados com respostas simuladas do Gemini, sem chave.
 
 ## Estrutura do código
 
@@ -39,7 +52,8 @@ Conclua o diagnóstico e selecione **C9 — Montante em juros compostos** no map
 | [`styles.css`](styles.css) | Layout responsivo, aparência do grafo e interface do chat. |
 | [`dominio.js`](dominio.js) | Conceitos, pré-requisitos, questões, exercícios, gabaritos e regras de pontuação. |
 | [`app.js`](app.js) | Fluxo do diagnóstico, renderização do grafo e interação com o tutor. |
+| [`servidor.js`](servidor.js) | Servidor local e integração dos chats com o Gemini. |
 
 ## Como manter este README atualizado
 
-Atualize este arquivo no mesmo commit ou pull request que alterar o comportamento documentado. Revise **Como rodar** se mudarem as dependências ou a configuração. Atualize **Como funciona**, **Estratégia 13** e o roteiro de teste quando mudarem o diagnóstico, o grafo, o chat ou a pontuação. Se a estrutura do código mudar, confira os caminhos e as responsabilidades na tabela.
+Atualize este arquivo no mesmo commit ou pull request que alterar o comportamento documentado. Revise **Como rodar** se mudarem as dependências ou a configuração. Atualize a descrição do fluxo e o roteiro de teste quando mudarem o diagnóstico, o grafo, o chat ou a pontuação. Se a estrutura do código mudar, confira os caminhos e as responsabilidades na tabela.

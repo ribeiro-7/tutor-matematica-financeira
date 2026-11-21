@@ -7,6 +7,8 @@ const notas = Array(15).fill(0);
 const respostas = Array(14).fill(null);
 const sessoes = new Map();
 const nos = new Map();
+const podeConsultarGemini = location.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(location.hostname);
+let servidorSemIA = false;
 let questao = 0;
 let diagnosticado = false;
 let ativo = null;
@@ -239,7 +241,7 @@ function consolidar(sessao) {
   sessao.fase = 'consolidacao';
   sessao.desafioFeito = true;
   sessao.checarTransferencia = true;
-  const tipos = sessao.tentativas.map(Dominio.interpretarTentativa);
+  const tipos = sessao.tentativas.map(({ tipo }) => tipo);
   let conexao = 'Uma forma de começar é anotar o saldo ao fim de cada mês e usá-lo como base para o próximo.';
   if (tipos.includes('fixo')) {
     conexao = 'Na sua tentativa, tratar o acréscimo como fixo funciona para a primeira aplicação e explica o empate no primeiro mês. Na segunda, precisamos aplicar a taxa ao saldo atualizado a cada mês.';
@@ -251,42 +253,90 @@ function consolidar(sessao) {
   } else if (tipos.includes('intermediario')) {
     conexao = 'O valor que você encontrou para o segundo mês já mostra como o saldo atualizado altera os juros. Podemos repetir esse passo.';
   } else if (sessao.tentativas.length) {
-    const tentativa = sessao.tentativas.at(-1);
+    const tentativa = sessao.tentativas.at(-1).texto;
     const trecho = tentativa.length > 160 ? `${tentativa.slice(0, 157)}…` : tentativa;
     conexao = `Você tentou “${trecho}”. Vamos conferir sua ideia acompanhando quanto se acrescenta ao saldo em cada aplicação, mês a mês.`;
   }
   registrar(sessao, `${conexao}\n\n${Dominio.desafio.consolida}\n\n${Dominio.desafio.formaliza}`);
 }
 
-function explorar(sessao, texto) {
-  sessao.tentativas.push(texto);
-  const tipo = Dominio.interpretarTentativa(texto);
-  if (tipo === 'variavel' || sessao.tentativas.length >= 2) {
+const orientacoesC9 = {
+  fixo: 'O acréscimo de R$ 100 explica o empate no primeiro mês. No segundo mês, a segunda aplicação começa com R$ 1.100. Quanto é 10% desse saldo?',
+  variavel: 'Você percebeu que a base muda. Que saldo a segunda aplicação teria no fim de cada mês?',
+  intermediario: 'Você avançou em uma parte da conta. Que saldo começa o mês seguinte e qual seria o acréscimo?',
+  palpite: 'Vamos conferir sua previsão. Como você calculou o saldo da aplicação que rende uma porcentagem todo mês?',
+  tentativa: 'Vamos olhar só para o segundo mês. As duas aplicações começam com R$ 1.100. Que acréscimo cada uma recebe?',
+  saldo: 'Saldo é o dinheiro que há na aplicação em determinado momento. Ele inclui o valor inicial e os juros acumulados até ali. Em qual mês você quer começar a conta?',
+  taxa: 'A taxa indica a porcentagem aplicada em cada período. Por exemplo, 10% representa 10 de cada 100, ou 0,10. Sobre qual valor você aplicaria a taxa?',
+  prazo: 'O prazo diz por quanto tempo o dinheiro fica aplicado. Com taxa ao mês, cada mês é um período. Quantas vezes a taxa deve ser aplicada neste problema?',
+  compostos: 'Em juros compostos, os juros de um período entram no saldo usado no período seguinte. Que valor seria a base do segundo mês?',
+  duvida: 'Qual parte da conta você quer conferir primeiro: o saldo inicial, a taxa ou o número de meses?',
+  ambigua: 'Pode me contar um pouco mais? Diga qual saldo você está calculando e como começaria.',
+  fora: 'Vamos voltar ao exercício de juros compostos. Em qual parte dele você quer ajuda?',
+};
+const tiposTentativa = new Set(['tentativa', 'metodo', 'equivoco', 'fixo', 'variavel', 'intermediario', 'palpite']);
+
+function orientar(sessao, id, tipo) {
+  if (tipo === 'ajuda') {
+    pedirDica(sessao);
+    return;
+  }
+  if (tipo === 'conceito' || tipo === 'procedimento') {
+    if (tipo === 'procedimento' && sessao.fase === 'pratica') {
+      pedirDica(sessao);
+    } else {
+      registrar(sessao, Dominio.explicarConceito(id));
+      if (sessao.fase === 'pratica') sessao.ajuda = true;
+    }
+    return;
+  }
+  if (id === 9 && orientacoesC9[tipo]) {
+    registrar(sessao, orientacoesC9[tipo]);
+    if (sessao.fase === 'pratica' && ['saldo', 'taxa', 'prazo', 'compostos'].includes(tipo)) sessao.ajuda = true;
+    return;
+  }
+  const texto = tipo === 'fora' ? 'Vamos voltar ao exercício. Qual parte dele você quer conferir?'
+    : 'Pode dizer qual parte do exercício você quer entender ou como começaria a conta?';
+  registrar(sessao, texto);
+}
+
+function pedirDica(sessao) {
+  if (sessao.fase === 'exploracao') {
+    sessao.dicaDesafio = true;
+    registrar(sessao, 'Comece pelo segundo mês. Anote os dois saldos iniciais e aplique a regra de acréscimo de cada aplicação.');
+  } else {
+    sessao.ajuda = true;
+    registrar(sessao, sessao.problema.dica);
+  }
+}
+
+function explorar(sessao, texto, tipo) {
+  if (!tiposTentativa.has(tipo)) {
+    orientar(sessao, 9, tipo);
+    return;
+  }
+  sessao.tentativas.push({ texto, tipo });
+  const respostaJustificada = tipo === 'variavel' && Dominio.numerosNoTexto(texto).includes(1331);
+  if (respostaJustificada || sessao.tentativas.length >= 2) {
     consolidar(sessao);
     return;
   }
-  if (tipo === 'fixo') {
-    registrar(sessao, 'O acréscimo de R$ 100 explica o empate no primeiro mês. No segundo mês, a segunda aplicação começa com R$ 1.100. Quanto é 10% desse saldo?');
-  } else if (tipo === 'intermediario') {
-    registrar(sessao, 'Você já olhou para o segundo mês. Qual saldo inicia o terceiro e quanto será acrescentado sobre ele?');
-  } else {
-    registrar(sessao, 'Vamos olhar só para o segundo mês. As duas aplicações começam com R$ 1.100. Que acréscimo cada uma recebe?');
-  }
+  registrar(sessao, orientacoesC9[tipo] || orientacoesC9.tentativa);
   sessao.dicaDesafio = true;
 }
 
-function encerrarPratica(sessao) {
+function encerrarPratica(sessao, id) {
   sessao.fase = 'finalizada';
-  if (notas[ativo] >= 70) {
-    const recomendado = Dominio.sugerir(notas, ativo);
+  if (notas[id] >= 70) {
+    const recomendado = Dominio.sugerir(notas, id);
     registrar(sessao, recomendado
       ? `Você atingiu o domínio deste conceito. Sugestão para continuar: ${recomendado.nome}.`
       : 'Você atingiu o domínio deste conceito. Confira o mapa para escolher o que revisar.');
   }
 }
 
-function pontuar(evento) {
-  notas[ativo] = Dominio.pontuar(notas[ativo], evento);
+function pontuar(id, evento) {
+  notas[id] = Dominio.pontuar(notas[id], evento);
   atualizarMapa();
 }
 
@@ -294,33 +344,108 @@ function lerResposta(texto) {
   const direto = Dominio.lerNumero(texto);
   if (direto !== null) return direto;
   const frase = texto.match(/(?:^|\s)(?:R\$\s*)?([+-]?\d+(?:[.,]\d+)*)\s*(%|reais)?(?=$|[\s.!?,;])/gi) || [];
-  return frase.length === 1 ? Dominio.lerNumero(frase[0].replace(/\s+reais$/i, '')) : null;
+  if (frase.length === 1) return Dominio.lerNumero(frase[0].replace(/\s+reais$/i, ''));
+  const finais = [...texto.matchAll(/\b(?:custo final|saldo final|resultado final|valor final|resposta final|montante)\s*(?:é|foi|deu|fica em|ficou em|[:=])\s*((?:R\$\s*)?[+-]?\d+(?:[.,]\d+)*\s*%?)/gi)];
+  return finais.length === 1 ? Dominio.lerNumero(finais[0][1]) : null;
 }
 
-function responderPratica(sessao, texto) {
+function responderPratica(sessao, texto, id, tipo) {
+  if (tipo && !tiposTentativa.has(tipo)) {
+    orientar(sessao, id, tipo);
+    return;
+  }
   const valor = lerResposta(texto);
+  const reconheceuMetodo = tipo === 'variavel' || tipo === 'metodo';
+  const revisarMetodo = tipo === 'fixo' || tipo === 'equivoco';
   if (valor === null) {
-    registrar(sessao, 'Para eu conferir, envie um único valor como resposta. Você pode acompanhá-lo de uma explicação sem outros números.');
+    let comentario = reconheceuMetodo ? 'Seu raciocínio está no caminho certo. ' : '';
+    if (revisarMetodo) {
+      sessao.ajuda = true;
+      comentario = `${Dominio.explicarConceito(id)} `;
+    }
+    registrar(sessao, comentario + 'Para eu conferir, envie um único valor como resposta. Você pode acompanhá-lo de uma explicação sem outros números.');
     return;
   }
   sessao.tentativasPratica += 1;
   const { resposta, erroTipico, dica, resolucao } = sessao.problema;
   if (Dominio.confere(valor, resposta)) {
-    pontuar(sessao.ajuda ? 'comDica' : 'independente');
-    registrar(sessao, `Correto! ${resolucao}`);
-    encerrarPratica(sessao);
+    pontuar(id, sessao.ajuda ? 'comDica' : 'independente');
+    const comentario = reconheceuMetodo ? 'Correto! Seu raciocínio também está no caminho certo. '
+      : revisarMetodo ? `O valor está correto. Confira o procedimento. ${Dominio.explicarConceito(id)} ` : 'Correto! ';
+    registrar(sessao, comentario + resolucao);
+    encerrarPratica(sessao, id);
   } else if (sessao.ajuda) {
-    pontuar('erroComDica');
+    pontuar(id, 'erroComDica');
     registrar(sessao, `Vamos conferir a resolução. ${resolucao}`);
-    encerrarPratica(sessao);
+    encerrarPratica(sessao, id);
   } else {
-    pontuar('erroInicial');
+    pontuar(id, 'erroInicial');
     sessao.ajuda = true;
     const retorno = Dominio.confere(valor, erroTipico)
       ? 'Esse valor corresponde aos juros simples. Nos compostos, os juros anteriores entram na base do cálculo. '
-      : 'Esse valor ficou diferente do gabarito. ';
+      : reconheceuMetodo ? 'O procedimento faz sentido. Vamos conferir a conta. '
+        : 'Esse valor ficou diferente do gabarito. ';
     registrar(sessao, retorno + dica);
   }
+}
+
+async function interpretarMensagem(sessao, id, mensagem, ultimaFalaTutor) {
+  const fase = sessao.fase;
+  const local = { tipo: Dominio.interpretarLocal(id, mensagem, fase) };
+  try {
+    const resposta = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(7500),
+      body: JSON.stringify({
+        id, fase, mensagem, ultimaFalaTutor,
+        enunciado: fase === 'exploracao' ? Dominio.desafio.enunciado : sessao.problema.enunciado,
+      }),
+    });
+    if (resposta.status === 204 || resposta.status === 404 || resposta.status === 405) servidorSemIA = true;
+    if (resposta.status !== 200) {
+      sessao.modoIA = servidorSemIA ? 'local' : 'indisponivel';
+      return local;
+    }
+    const { tipo, retomada } = await resposta.json();
+    if (Dominio.tiposChat(id).includes(tipo)) {
+      sessao.modoIA = 'modelo';
+      return { tipo, retomada: typeof retomada === 'string' ? retomada : null };
+    }
+  } catch {
+    // Uma falha de rede não interrompe o exercício.
+  }
+  sessao.modoIA = 'indisponivel';
+  return local;
+}
+
+async function enviarMensagem(sessao, texto, id) {
+  if (sessao.ocupada || !['exploracao', 'pratica'].includes(sessao.fase)) return;
+  const ultimaFalaTutor = sessao.mensagens.findLast(({ autor }) => autor === 'tutor')?.texto || '';
+  registrar(sessao, texto, 'aluno');
+  if (sessao.fase === 'pratica' && Dominio.lerNumero(texto) !== null) {
+    responderPratica(sessao, texto, id);
+    if (ativo === id) exibirChat(false, true);
+    return;
+  }
+  let interpretacao;
+  if (podeConsultarGemini && !servidorSemIA) {
+    sessao.ocupada = true;
+    exibirChat();
+    interpretacao = await interpretarMensagem(sessao, id, texto, ultimaFalaTutor.slice(0, 650));
+    sessao.ocupada = false;
+  } else {
+    interpretacao = { tipo: Dominio.interpretarLocal(id, texto, sessao.fase) };
+  }
+  const { tipo, retomada } = interpretacao;
+  const indiceDevolutiva = sessao.mensagens.length;
+  if (sessao.fase === 'exploracao') explorar(sessao, texto, tipo);
+  else responderPratica(sessao, texto, id, tipo);
+  const devolutiva = sessao.mensagens[indiceDevolutiva];
+  if (retomada && devolutiva?.autor === 'tutor') {
+    devolutiva.texto = `${retomada}\n\n${devolutiva.texto}`;
+  }
+  if (ativo === id) exibirChat(false, true);
 }
 
 function exibirChat(focar = false, focarCaixa = false) {
@@ -374,10 +499,7 @@ function exibirChat(focar = false, focarCaixa = false) {
       evento.preventDefault();
       const texto = caixa.value.trim();
       if (!texto) return;
-      registrar(sessao, texto, 'aluno');
-      if (sessao.fase === 'exploracao') explorar(sessao, texto);
-      else responderPratica(sessao, texto);
-      exibirChat(false, true);
+      void enviarMensagem(sessao, texto, conceito.id);
     });
     caixa.addEventListener('keydown', (evento) => {
       if (evento.key === 'Enter' && !evento.shiftKey && !evento.isComposing) {
@@ -385,25 +507,20 @@ function exibirChat(focar = false, focarCaixa = false) {
         formulario.requestSubmit();
       }
     });
-    const ajuda = botao('Pedir ajuda', 'secondary small', refresh(() => {
-      if (sessao.fase === 'exploracao') {
-        sessao.dicaDesafio = true;
-        registrar(sessao, 'Comece pelo segundo mês. Anote os dois saldos iniciais e aplique a regra de acréscimo de cada aplicação.');
-      } else {
-        sessao.ajuda = true;
-        registrar(sessao, sessao.problema.dica);
-      }
-    }));
-    ajuda.disabled = sessao.fase === 'exploracao' ? sessao.dicaDesafio : sessao.ajuda;
+    caixa.disabled = enviar.disabled = Boolean(sessao.ocupada);
+    const ajuda = botao('Pedir ajuda', 'secondary small', refresh(() => pedirDica(sessao)));
+    ajuda.disabled = sessao.ocupada || (sessao.fase === 'exploracao' ? sessao.dicaDesafio : sessao.ajuda);
     const emDesafio = sessao.fase === 'exploracao';
-    acoes.append(ajuda, botao(emDesafio ? 'Ver explicação' : 'Ver resolução', 'text-button', refresh(() => {
+    const resolver = botao(emDesafio ? 'Ver explicação' : 'Ver resolução', 'text-button', refresh(() => {
       if (emDesafio) consolidar(sessao);
       else {
-        if (!sessao.tentativasPratica) pontuar('revelacaoPrecoce');
+        if (!sessao.tentativasPratica) pontuar(conceito.id, 'revelacaoPrecoce');
         registrar(sessao, sessao.problema.resolucao);
-        encerrarPratica(sessao);
+        encerrarPratica(sessao, conceito.id);
       }
-    })));
+    }));
+    resolver.disabled = Boolean(sessao.ocupada);
+    acoes.append(ajuda, resolver);
     rodape.append(formulario, acoes);
   } else if (sessao.fase === 'revisao') {
     const [primeiro] = Dominio.pendentes(ativo, notas);
@@ -420,6 +537,16 @@ function exibirChat(focar = false, focarCaixa = false) {
     }
   }
   if (!rodape.hasChildNodes()) rodape.append(acoes);
+  if (podeConsultarGemini) {
+    const status = sessao.ocupada ? 'Interpretando sua mensagem…'
+      : sessao.modoIA === 'modelo' ? 'Última interpretação feita com Gemini.'
+        : sessao.modoIA === 'indisponivel' ? 'Gemini indisponível. O tutor usou a interpretação local.'
+          : servidorSemIA ? 'Interpretação local.'
+            : 'Se a IA estiver configurada, as mensagens em texto livre são enviadas ao Gemini.';
+    const aviso = elemento('p', 'chat-status', status);
+    aviso.setAttribute('role', 'status');
+    rodape.append(aviso);
+  }
   atividade.replaceChildren(heading, faixa, historico, rodape);
   historico.scrollTop = historico.scrollHeight;
   if (focar) {
