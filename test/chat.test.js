@@ -12,6 +12,7 @@ const { criarServidor } = require('../servidor.js');
 class Elemento {
   constructor() {
     this.children = [];
+    this.eventos = {};
     this.dataset = {};
     this.style = {};
   }
@@ -19,11 +20,18 @@ class Elemento {
   append(...filhos) { this.children.push(...filhos); }
   replaceChildren(...filhos) { this.children = filhos; }
   hasChildNodes() { return this.children.length > 0; }
-  addEventListener() {}
+  addEventListener(evento, acao) { this.eventos[evento] = acao; }
   setAttribute() {}
   querySelector() { return undefined; }
   focus() {}
   getContext() { return new Proxy({}, { get: () => () => {} }); }
+  encontrar(texto) {
+    if (this.textContent === texto) return this;
+    for (const filho of this.children) {
+      const encontrado = filho.encontrar(texto);
+      if (encontrado) return encontrado;
+    }
+  }
 }
 
 function requisitar(servidor, url, { method, headers, body }) {
@@ -75,6 +83,9 @@ function montarTutor(consultar, chave = 'chave-ficticia') {
     nota: (id) => executar(`notas[${id}]`),
     tentativas: () => executar('sessoes.get(ativo).tentativas.length'),
     praticar: () => executar('iniciarPratica(sessoes.get(ativo))'),
+    sortear: (valor) => executar(`Math.random = () => ${valor}`),
+    ativo: () => executar('ativo'),
+    acao: (texto) => elementos['#activity'].encontrar(texto),
   };
 }
 
@@ -218,4 +229,47 @@ test('cota, resposta inválida e ausência de chave preservam o modo local', asy
     assert.match(tutor.fala(), /12 períodos mensais/);
     assert.equal(tutor.nota(5), 50);
   }
+});
+
+test('C5 dá uma dica específica quando o estudante usa anos como períodos mensais', async () => {
+  const tutor = montarTutor(undefined, '');
+  tutor.selecionar(5);
+  await tutor.enviar('3');
+  assert.match(tutor.fala(), /coincide com o prazo em anos/);
+  assert.equal(tutor.nota(5), 50);
+  await tutor.enviar('36');
+  assert.equal(tutor.nota(5), 57);
+});
+
+test('C9 reconhece o expoente em anos e permite revisar C5 sem abandonar a tentativa', async () => {
+  const tutor = montarTutor(undefined, '');
+  tutor.selecionar(9);
+  tutor.sortear(0.5);
+  tutor.praticar();
+  assert.match(tutor.fala(), /1% ao mês por 1 ano/);
+  await tutor.enviar('404');
+  assert.match(tutor.fala(), /prazo em anos como expoente/);
+  assert.doesNotMatch(tutor.fala(), /450,73/);
+  assert.equal(tutor.nota(9), 50);
+  tutor.acao('Revisar C5 · Período da taxa').eventos.click();
+  assert.equal(tutor.ativo(), 5);
+  tutor.selecionar(9);
+  assert.match(tutor.fala(), /prazo em anos como expoente/);
+  await tutor.enviar('450,73');
+  assert.equal(tutor.nota(9), 57);
+  assert.equal(tutor.acao('Revisar C5 · Período da taxa'), undefined);
+});
+
+test('C9 sugere C8 para montante simples e C14 sugere C12 para o total nominal', async () => {
+  const tutor = montarTutor(undefined, '');
+  tutor.selecionar(9);
+  tutor.praticar();
+  await tutor.enviar('460');
+  assert.match(tutor.fala(), /montante em juros simples/);
+  assert.ok(tutor.acao('Revisar C8 · Juros sobre juros'));
+  tutor.selecionar(14);
+  await tutor.enviar('420');
+  assert.match(tutor.fala(), /soma nominal das parcelas/);
+  assert.ok(tutor.acao('Revisar C12 · Parcelamento'));
+  assert.equal(tutor.nota(14), 50);
 });
