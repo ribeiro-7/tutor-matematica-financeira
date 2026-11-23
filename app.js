@@ -222,9 +222,10 @@ function iniciarConceito(sessao) {
 
 function iniciarPratica(sessao) {
   const anterior = sessao.problema?.enunciado;
-  const inicio = Math.floor(Math.random() * 4);
-  for (let passo = 0; passo < 4; passo += 1) {
-    const novo = Dominio.problema(ativo, () => ((inicio + passo) % 4) / 4);
+  const quantidade = Dominio.totalVariantes(ativo);
+  const inicio = Math.floor(Math.random() * quantidade);
+  for (let passo = 0; passo < quantidade; passo += 1) {
+    const novo = Dominio.problema(ativo, () => ((inicio + passo) % quantidade) / quantidade);
     if (novo.enunciado === anterior) continue;
     sessao.problema = novo;
     break;
@@ -232,6 +233,7 @@ function iniciarPratica(sessao) {
   sessao.fase = 'pratica';
   sessao.tentativasPratica = 0;
   sessao.ajuda = false;
+  sessao.revisaoSugerida = null;
   const transferencia = ativo === 9 && sessao.checarTransferencia;
   if (transferencia) sessao.checarTransferencia = false;
   registrar(sessao, transferencia ? `Agora teste a ideia em outra situação. ${sessao.problema.enunciado} Se quiser, diga também sobre qual saldo incidem os juros de cada mês.` : sessao.problema.enunciado);
@@ -367,25 +369,30 @@ function responderPratica(sessao, texto, id, tipo) {
     return;
   }
   sessao.tentativasPratica += 1;
-  const { resposta, erroTipico, dica, resolucao } = sessao.problema;
+  const { resposta, dica, resolucao } = sessao.problema;
   if (Dominio.confere(valor, resposta)) {
+    sessao.revisaoSugerida = null;
     pontuar(id, sessao.ajuda ? 'comDica' : 'independente');
     const comentario = reconheceuMetodo ? 'Correto! Seu raciocínio também está no caminho certo. '
       : revisarMetodo ? `O valor está correto. Confira o procedimento. ${Dominio.explicarConceito(id)} ` : 'Correto! ';
     registrar(sessao, comentario + resolucao);
     encerrarPratica(sessao, id);
-  } else if (sessao.ajuda) {
+    return;
+  }
+
+  const erro = Dominio.identificarErro(sessao.problema, valor);
+  if (erro?.revisao) sessao.revisaoSugerida = erro.revisao;
+  if (sessao.ajuda) {
     pontuar(id, 'erroComDica');
-    registrar(sessao, `Vamos conferir a resolução. ${resolucao}`);
+    const retorno = erro ? `${erro.dica}\n\n` : '';
+    registrar(sessao, `${retorno}Vamos conferir a resolução. ${resolucao}`);
     encerrarPratica(sessao, id);
   } else {
     pontuar(id, 'erroInicial');
     sessao.ajuda = true;
-    const retorno = Dominio.confere(valor, erroTipico)
-      ? 'Esse valor corresponde aos juros simples. Nos compostos, os juros anteriores entram na base do cálculo. '
-      : reconheceuMetodo ? 'O procedimento faz sentido. Vamos conferir a conta. '
+    const retorno = reconheceuMetodo ? 'O procedimento faz sentido. Vamos conferir a conta. '
         : 'Esse valor ficou diferente do gabarito. ';
-    registrar(sessao, retorno + dica);
+    registrar(sessao, erro?.dica || retorno + dica);
   }
 }
 
@@ -535,6 +542,10 @@ function exibirChat(focar = false, focarCaixa = false) {
     if (!consolidado && notas[ativo] >= 70 && recomendado) {
       acoes.append(botao(`Próximo: ${recomendado.nome}`, 'secondary', () => selecionar(recomendado.id)));
     }
+  }
+  if (sessao.revisaoSugerida && !sessao.ocupada) {
+    const { id, nome } = Dominio.conceitos[sessao.revisaoSugerida - 1];
+    acoes.append(botao(`Revisar C${id} · ${nome}`, 'secondary', () => selecionar(id)));
   }
   if (!rodape.hasChildNodes()) rodape.append(acoes);
   if (podeConsultarGemini) {

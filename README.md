@@ -22,9 +22,11 @@ Abra [http://127.0.0.1:3000](http://127.0.0.1:3000). Nos 14 chats, o Gemini clas
 
 1. **Diagnóstico inicial.** O estudante responde a 14 questões, uma por conceito. Cada acerto inicia o conceito com 50 pontos. Os demais começam com 0.
 2. **Mapa de conceitos.** As setas ligam cada pré-requisito ao conceito que depende dele. Os nós indicam o progresso em três níveis: iniciante (0–29), em progresso (30–69) e dominado (70–100).
-3. **Prática no chat.** Ao selecionar um conceito, o estudante recebe um exercício. Se um pré-requisito direto estiver abaixo de 50 pontos, o tutor sugere revisá-lo e oferece a opção de continuar. Os valores dos exercícios variam a partir de modelos do projeto, e o código calcula e confere o gabarito.
+3. **Prática no chat.** Ao selecionar um conceito, o estudante recebe um exercício. Se um pré-requisito direto estiver abaixo de 50 pontos, o tutor sugere revisá-lo e oferece a opção de continuar. Cada conceito tem um modelo de exercício com quatro variações de valores. O C9 tem dois modelos, com prazo em meses ou em anos, além do desafio de abertura.
 
 Na prática, um acerto sem dica soma 15 pontos e um acerto com dica soma 7. O primeiro erro sem dica aciona uma pergunta-guia sem alterar a nota. Um erro com dica desconta 5 pontos, e abrir a resolução antes de enviar uma resposta numérica desconta 3. A nota fica entre 0 e 100.
+
+O JavaScript compara respostas incorretas com valores de erros previstos em C5, C9 e C14. Se houver uma coincidência clara, o tutor dá uma dica específica. Quando o erro sugere uma dificuldade com um pré-requisito, o chat oferece um atalho para revisá-lo. Por exemplo, usar o número de anos como expoente com uma taxa mensal no C9 sugere revisão do C5.
 
 ## Estratégia Desafios Produtivos
 
@@ -39,7 +41,7 @@ A estratégia **Desafios Produtivos** (*Productive Failure*) aparece na primeira
 Conclua o diagnóstico. Se aparecer uma sugestão de revisão ao abrir um conceito, clique em **Tentar mesmo assim**. No modo com Gemini, confira se o tutor retoma um trecho do que você escreveu antes de dar a orientação.
 
 - **C5.** Pergunte “Multiplico ou divido por 12?”. Confira se a dica orienta a converter o prazo para a unidade da taxa e se a nota só muda depois da resposta.
-- **C9.** Pergunte “O que significa saldo?” e depois tente “As duas terminam com R$ 1.300 porque entram R$ 100 todo mês”. Confira se o tutor responde à dúvida, faz uma pergunta-guia e apresenta a fórmula na consolidação. A nota volta a ser avaliada em **Praticar com outro exemplo**.
+- **C9.** Pergunte “O que significa saldo?” e depois tente “As duas terminam com R$ 1.300 porque entram R$ 100 todo mês”. Confira se o tutor responde à dúvida, faz uma pergunta-guia e apresenta a fórmula na consolidação. Na prática, se o prazo vier em anos, use esse número como expoente e confira a sugestão de revisar C5.
 - **C14.** Diga “Somei as parcelas sem trazer os valores para hoje”. Confira se o tutor orienta a comparar na mesma data. Envie o custo calculado para testar a correção.
 
 Execute `node --test` para rodar os testes automatizados com respostas simuladas do Gemini, sem chave.

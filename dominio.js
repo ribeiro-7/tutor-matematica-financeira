@@ -57,6 +57,13 @@ const Dominio = (() => {
     .find(({ id }) => id !== excluir && notas[id] < 70 && pendentes(id, notas).length === 0);
   const confere = (valor, esperado) =>
     valor !== null && Math.abs(valor - esperado) <= Math.max(0.005, Math.abs(esperado) * 0.005);
+  const totalVariantes = (id) => id === 9 ? 8 : 4;
+
+  function identificarErro(problema, valor) {
+    if (confere(valor, problema.resposta)) return null;
+    const candidatos = problema.erros.filter((erro) => confere(valor, erro.valor));
+    return candidatos.length === 1 ? candidatos[0] : null;
+  }
 
   function lerNumero(texto) {
     const resultado = texto.trim().match(/^(?:R\$\s*)?([+-]?(?:\d+(?:[.,]\d+)*|[.,]\d+))\s*%?$/i);
@@ -68,11 +75,44 @@ const Dominio = (() => {
     return Number.isFinite(valor) ? valor : null;
   }
 
+  function problemaC9(capital, taxa, meses, anos = null) {
+    const resposta = arredondar(montante(capital, taxa, meses));
+    const periodo = anos ? `${anos} ${anos === 1 ? 'ano' : 'anos'}` : `${meses} meses`;
+    const erros = [{
+      valor: arredondar(capital * (1 + taxa * meses / 100)),
+      dica: 'O valor está próximo ao montante em juros simples. Em juros compostos, sobre qual saldo incidem os juros de cada mês?',
+      revisao: 8,
+    }];
+    if (anos) {
+      erros.push({
+        valor: arredondar(montante(capital, taxa, anos)),
+        dica: 'O valor está próximo ao que resulta de usar o prazo em anos como expoente. Qual unidade o prazo precisa ter se a taxa é mensal?',
+        revisao: 5,
+      });
+    }
+    const conversao = anos ? `Converta o prazo para ${meses} meses antes de escolher o expoente. ` : '';
+    return {
+      enunciado: `Qual é o montante de ${moeda(capital)} a ${percentual(taxa)} ao mês por ${periodo} em juros compostos? Informe o saldo final em reais.`,
+      resposta,
+      dica: anos ? 'Converta o prazo para a unidade da taxa. Quantas vezes o fator mensal deve ser aplicado?'
+        : 'O saldo é multiplicado pelo mesmo fator em cada mês. Quantas vezes esse fator aparece?',
+      resolucao: `${conversao}Multiplique ${moeda(capital)} por (1 + ${numero(taxa / 100)}) elevado a ${meses}. O montante é ${moeda(resposta)}.`,
+      erros,
+    };
+  }
+
   function problema(id, sorteio = Math.random) {
-    const indice = Math.min(3, Math.floor(sorteio() * 4));
+    const quantidade = totalVariantes(id);
+    const variante = Math.min(quantidade - 1, Math.floor(sorteio() * quantidade));
+    const indice = variante % 4;
     const capital = [400, 500, 800, 1200][indice];
     const taxa = [5, 8, 10, 12][indice];
     const meses = [3, 4, 2, 5][indice];
+    if (id === 9) {
+      if (variante < 4) return problemaC9(capital, taxa, meses);
+      const anos = [1, 2, 1, 2][indice];
+      return problemaC9(capital, [1, 1.5, 2, 2.5][indice], anos * 12, anos);
+    }
     const base = moeda(capital);
     const juros = capital * taxa * meses / 100;
     const composto = arredondar(montante(capital, taxa, meses));
@@ -89,19 +129,25 @@ const Dominio = (() => {
       [`Calcule (1 + ${numero(taxa / 100)}) elevado a ${meses}. Use até seis casas decimais.`, (1 + taxa / 100) ** meses, 'O expoente indica quantas vezes o mesmo fator aparece na multiplicação.', `Multiplicando ${numero(1 + taxa / 100)} por si mesmo até ter ${meses} fatores, o resultado é ${numero((1 + taxa / 100) ** meses)}.`],
       [`Um produto de ${base} recebe ${taxa}% de desconto. Qual é o preço final?`, capital * (1 - taxa / 100), 'O desconto deve ser subtraído do preço original.', `O desconto é ${moeda(capital * taxa / 100)}. Subtraindo do preço inicial, obtemos ${moeda(capital * (1 - taxa / 100))}.`],
       [`Você aplicou um capital e recebeu ${moeda(juros)} em juros. O montante final foi ${moeda(simples)}. Qual era o capital inicial?`, capital, 'O montante é a soma do capital inicial e dos juros.', `${moeda(simples)} menos ${moeda(juros)} resulta em ${base}.`],
-      [`Se a taxa é mensal e a aplicação dura ${meses} anos, quantos períodos você deve usar?`, prazo, 'Cada ano contém 12 períodos mensais.', `${meses} × 12 = ${prazo} meses.`],
+      [`Se a taxa é mensal e a aplicação dura ${meses} anos, quantos períodos você deve usar?`, prazo, 'Cada ano contém 12 períodos mensais.', `${meses} × 12 = ${prazo} meses.`, [
+        { valor: meses, dica: 'Esse número coincide com o prazo em anos. Como a taxa é mensal, quantos meses há em cada ano?' },
+        { valor: meses / 12, dica: 'Esse número é compatível com uma divisão por 12. De anos para meses, o número de períodos aumenta ou diminui?' },
+      ]],
       [`Calcule apenas os juros simples de ${emComum}.`, juros, 'Encontre os juros de um mês sobre o capital inicial e multiplique pelo número de meses.', `${base} × ${numero(taxa / 100)} × ${meses} = ${moeda(juros)} em juros.`],
       [`Qual é o montante de ${emComum} em juros simples?`, simples, 'Some os juros de todos os meses ao capital inicial.', `Os juros são ${moeda(juros)}. Somando a ${base}, o saldo fica em ${moeda(simples)}.`],
       [`Você aplica ${base} a ${taxa}% ao mês em juros compostos. Quanto rende apenas o segundo mês?`, arredondar(montante(capital, taxa, 1) * taxa / 100), 'No segundo mês, a taxa incide sobre o saldo que já inclui os primeiros juros.', `O primeiro mês termina com ${moeda(montante(capital, taxa, 1))}. Aplicando ${taxa}% a esse saldo, o segundo mês rende ${moeda(montante(capital, taxa, 1) * taxa / 100)}.`],
-      [`Qual é o montante de ${emComum} em juros compostos? Informe o saldo final em reais.`, composto, 'O saldo é multiplicado pelo mesmo fator em cada mês. Quantas vezes esse fator aparece?', `Multiplique ${base} por (1 + ${numero(taxa / 100)}) elevado a ${meses}. O montante é ${moeda(composto)}.`, simples],
+      null, // C9 usa problemaC9.
       [`Compare ${emComum} nos dois regimes. Em reais, quanto a mais rende o regime composto?`, arredondar(composto - simples), 'Calcule o saldo de cada aplicação e subtraia o menor do maior.', `O saldo composto é ${moeda(composto)} e o simples é ${moeda(simples)}. A diferença é ${moeda(composto - simples)}.`],
       [`Qual é a taxa percentual equivalente a ${taxa}% ao mês por 2 meses em juros compostos?`, ((1 + taxa / 100) ** 2 - 1) * 100, 'Multiplique os dois fatores de crescimento e retire o 1 que representa o capital original.', `[(1 + ${numero(taxa / 100)})² − 1] × 100 = ${percentual(((1 + taxa / 100) ** 2 - 1) * 100)}.`],
       [`Uma compra tem duas parcelas de ${moeda(parcela)}, uma em 1 mês e outra em 2 meses. Com taxa de desconto de ${taxa}% ao mês, quanto valem as duas parcelas juntas hoje?`, hoje, 'Traga cada parcela separadamente para hoje. Use um período para a primeira e dois para a segunda.', `${moeda(parcela)} ÷ ${numero(1 + taxa / 100)} + ${moeda(parcela)} ÷ (${numero(1 + taxa / 100)})² = ${moeda(hoje)} em valor presente.`],
       [`Um investimento rende ${taxa}% no ano, com inflação de ${inflacao}%. Qual é o juro real em porcentagem? Arredonde a duas casas.`, arredondar(((1 + taxa / 100) / (1 + inflacao / 100) - 1) * 100), 'Divida o fator de crescimento do investimento pelo fator de crescimento dos preços.', `[(1 + ${numero(taxa / 100)}) ÷ (1 + ${numero(inflacao / 100)}) − 1] × 100 ≈ ${casas(((1 + taxa / 100) / (1 + inflacao / 100) - 1) * 100)}%.`],
-      [`Uma compra custa ${moeda(precoVista)} à vista ou duas parcelas de ${moeda(parcela)}, em 1 e 2 meses. Com taxa de ${taxa}% ao mês, qual é o custo da opção mais barata, em valor de hoje? Se quiser, explique sua escolha.`, Math.min(precoVista, hoje), 'Traga as parcelas para o dia de hoje antes de comparar com o preço à vista.', `O preço à vista é ${moeda(precoVista)}. O valor presente das parcelas é ${moeda(hoje)}. A opção mais barata é ${precoVista < hoje ? 'à vista' : 'parcelada'}, por ${moeda(Math.min(precoVista, hoje))} em valor de hoje.`],
+      [`Uma compra custa ${moeda(precoVista)} à vista ou duas parcelas de ${moeda(parcela)}, em 1 e 2 meses. Com taxa de ${taxa}% ao mês, qual é o custo da opção mais barata, em valor de hoje? Se quiser, explique sua escolha.`, Math.min(precoVista, hoje), 'Traga as parcelas para o dia de hoje antes de comparar com o preço à vista.', `O preço à vista é ${moeda(precoVista)}. O valor presente das parcelas é ${moeda(hoje)}. A opção mais barata é ${precoVista < hoje ? 'à vista' : 'parcelada'}, por ${moeda(Math.min(precoVista, hoje))} em valor de hoje.`, [
+        { valor: 2 * parcela, dica: 'Esse valor está próximo da soma nominal das parcelas. Quanto vale hoje cada parcela?', revisao: 12 },
+        { valor: precoVista, dica: 'Esse valor coincide com o preço à vista. Antes de escolher, compare-o com o valor das duas parcelas trazidas para hoje.', revisao: 12 },
+      ]],
     ];
-    const [enunciado, resposta, dica, resolucao, erroTipico] = respostas[id - 1];
-    return { enunciado, resposta, dica, resolucao, erroTipico };
+    const [enunciado, resposta, dica, resolucao, erros = []] = respostas[id - 1];
+    return { enunciado, resposta, dica, resolucao, erros };
   }
 
   const desafio = {
@@ -181,7 +227,7 @@ const Dominio = (() => {
     return mensagem.endsWith('?') ? 'duvida' : 'ambigua';
   }
 
-  return { conceitos, diagnostico, estado, rotulos, pontuar, pendentes, sugerir, confere, lerNumero, problema, desafio, tiposChat, numerosNoTexto, interpretarLocal, explicarConceito };
+  return { conceitos, diagnostico, estado, rotulos, pontuar, pendentes, sugerir, confere, lerNumero, problema, totalVariantes, identificarErro, desafio, tiposChat, numerosNoTexto, interpretarLocal, explicarConceito };
 })();
 
 if (typeof module !== 'undefined') module.exports = Dominio;
