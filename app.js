@@ -290,22 +290,25 @@ function iniciarConceito(sessao) {
 }
 
 function iniciarPratica(sessao) {
-  const anterior = sessao.problema?.enunciado;
   const quantidade = Dominio.totalVariantes(ativo);
-  const inicio = Math.floor(Math.random() * quantidade);
-  for (let passo = 0; passo < quantidade; passo += 1) {
-    const novo = Dominio.problema(ativo, () => ((inicio + passo) % quantidade) / quantidade);
-    if (novo.enunciado === anterior) continue;
-    sessao.problema = novo;
-    break;
+  if (!sessao.variantesRestantes?.length) {
+    sessao.variantesRestantes = Array.from({ length: quantidade }, (_, variante) => variante);
   }
+  const sorteada = Dominio.sortearVariante(sessao.variantesRestantes, sessao.ultimaVariante);
+  sessao.variantesRestantes = sessao.variantesRestantes.filter((variante) => variante !== sorteada);
+  sessao.ultimaVariante = sorteada;
+  sessao.problema = Dominio.problema(ativo, () => sorteada / quantidade);
   sessao.fase = 'pratica';
   sessao.tentativasPratica = 0;
   sessao.ajuda = false;
   sessao.revisaoSugerida = null;
+  sessao.escolhaComparacao = null;
   const transferencia = ativo === 9 && sessao.checarTransferencia;
   if (transferencia) sessao.checarTransferencia = false;
-  registrar(sessao, transferencia ? `Agora teste a ideia em outra situação. ${sessao.problema.enunciado} Se quiser, diga também sobre qual saldo incidem os juros de cada mês.` : sessao.problema.enunciado);
+  const convite = transferencia ? 'Agora teste a ideia em outra situação. ' : '';
+  const complemento = transferencia && sessao.problema.formato !== 'comparacao'
+    ? ' Se quiser, diga também sobre qual saldo incidem os juros de cada mês.' : '';
+  registrar(sessao, convite + sessao.problema.enunciado + complemento);
 }
 
 function consolidar(sessao) {
@@ -421,6 +424,10 @@ function lerResposta(texto) {
 }
 
 function responderPratica(sessao, texto, id, tipo) {
+  if (sessao.problema.formato === 'comparacao') {
+    responderComparacao(sessao, texto, id, tipo);
+    return;
+  }
   if (tipo && !tiposTentativa.has(tipo)) {
     orientar(sessao, id, tipo);
     return;
@@ -437,9 +444,38 @@ function responderPratica(sessao, texto, id, tipo) {
     registrar(sessao, comentario + 'Para eu conferir, envie um único valor como resposta. Você pode acompanhá-lo de uma explicação sem outros números.');
     return;
   }
+  const correto = Dominio.confere(valor, sessao.problema.resposta);
+  const erro = correto ? null : Dominio.identificarErro(sessao.problema, valor);
+  corrigirPratica(sessao, id, { correto, erro, reconheceuMetodo, revisarMetodo });
+}
+
+function responderComparacao(sessao, texto, id, tipo) {
+  const { escolha, motivo } = Dominio.lerComparacao(texto);
+  if (escolha) sessao.escolhaComparacao = escolha;
+  if (!escolha && !motivo && tipo && !tiposTentativa.has(tipo) && tipo !== 'ambigua') {
+    orientar(sessao, id, tipo);
+    return;
+  }
+  if (!sessao.escolhaComparacao || !motivo) {
+    const retorno = sessao.escolhaComparacao
+      ? `Você indicou a conta ${sessao.escolhaComparacao}. Para conferir, explique o que acontece com o saldo ou com o fator de um mês para o outro.`
+      : 'Indique a conta A ou B e explique o que acontece de um mês para o outro.';
+    registrar(sessao, retorno);
+    return;
+  }
+  const correto = sessao.escolhaComparacao === sessao.problema.resposta && motivo === 'composto';
+  sessao.escolhaComparacao = null;
+  corrigirPratica(sessao, id, {
+    correto,
+    erro: correto ? null : { dica: sessao.problema.dica },
+    reconheceuMetodo: correto,
+  });
+}
+
+function corrigirPratica(sessao, id, { correto, erro, reconheceuMetodo, revisarMetodo }) {
   sessao.tentativasPratica += 1;
-  const { resposta, dica, resolucao } = sessao.problema;
-  if (Dominio.confere(valor, resposta)) {
+  const { dica, resolucao } = sessao.problema;
+  if (correto) {
     sessao.revisaoSugerida = null;
     pontuar(id, sessao.ajuda ? 'comDica' : 'independente');
     const comentario = reconheceuMetodo ? 'Correto! Seu raciocínio também está no caminho certo. '
@@ -449,7 +485,6 @@ function responderPratica(sessao, texto, id, tipo) {
     return;
   }
 
-  const erro = Dominio.identificarErro(sessao.problema, valor);
   if (erro?.revisao) sessao.revisaoSugerida = erro.revisao;
   if (sessao.ajuda) {
     pontuar(id, 'erroComDica');
@@ -499,7 +534,8 @@ async function enviarMensagem(sessao, texto, id) {
   if (sessao.ocupada || !['exploracao', 'pratica'].includes(sessao.fase)) return;
   const ultimaFalaTutor = sessao.mensagens.findLast(({ autor }) => autor === 'tutor')?.texto || '';
   registrar(sessao, texto, 'aluno');
-  if (sessao.fase === 'pratica' && Dominio.lerNumero(texto) !== null) {
+  if (sessao.fase === 'pratica' && (Dominio.lerNumero(texto) !== null
+    || (sessao.problema.formato === 'comparacao' && /^[ab]$/i.test(texto)))) {
     responderPratica(sessao, texto, id);
     if (ativo === id) exibirChat(false, true);
     return;
@@ -571,7 +607,8 @@ function exibirChat(focar = false, focarCaixa = false) {
     caixa.rows = 2;
     caixa.maxLength = 600;
     caixa.required = true;
-    caixa.placeholder = sessao.fase === 'exploracao' ? 'Conte como você pensou…' : 'Digite sua resposta…';
+    caixa.placeholder = sessao.fase === 'exploracao' ? 'Conte como você pensou…'
+      : sessao.problema.formato === 'comparacao' ? 'Escolha A ou B e explique…' : 'Digite sua resposta…';
     caixa.setAttribute('aria-label', caixa.placeholder);
     const enviar = elemento('button', 'primary', 'Enviar');
     enviar.type = 'submit';

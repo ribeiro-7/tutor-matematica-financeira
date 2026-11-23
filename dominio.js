@@ -6,6 +6,7 @@ const Dominio = (() => {
   const moeda = (valor) => reais.format(valor);
   const numero = (valor) => decimal.format(valor);
   const percentual = (valor) => `${numero(valor)}%`;
+  const normalizarTexto = (texto) => texto.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim();
 
   // Coluna e linha posicionam os nós. Os pré-requisitos também alimentam a recomendação.
   const conceitos = [
@@ -60,7 +61,23 @@ const Dominio = (() => {
     .find(({ id }) => id !== excluir && (notas[id] ?? 0) < 70 && pendentes(id, notas).length === 0);
   const confere = (valor, esperado) =>
     valor !== null && Math.abs(valor - esperado) <= Math.max(0.005, Math.abs(esperado) * 0.005);
-  const totalVariantes = (id) => id === 9 ? 8 : 4;
+  const variantesPorModelo = 4;
+  const totalVariantes = (id) => (id === 9 ? 3 : 1) * variantesPorModelo;
+  const modeloDaVariante = (variante) => Math.floor(variante / variantesPorModelo);
+
+  function sortearVariante(restantes, ultima, sorteio = Math.random) {
+    const candidatas = restantes.length > 1 ? restantes.filter((variante) => variante !== ultima) : restantes;
+    const porModelo = new Map();
+    for (const variante of candidatas) {
+      const modelo = modeloDaVariante(variante);
+      porModelo.set(modelo, (porModelo.get(modelo) || 0) + 1);
+    }
+    const maiorGrupo = Math.max(...porModelo.values());
+    const equilibradas = candidatas.filter((variante) => porModelo.get(modeloDaVariante(variante)) === maiorGrupo);
+    const diferentes = equilibradas.filter((variante) => modeloDaVariante(variante) !== modeloDaVariante(ultima));
+    const opcoes = diferentes.length ? diferentes : equilibradas;
+    return opcoes[Math.floor(sorteio() * opcoes.length)];
+  }
 
   function identificarErro(problema, valor) {
     if (confere(valor, problema.resposta)) return null;
@@ -104,15 +121,58 @@ const Dominio = (() => {
     };
   }
 
+  function comparacaoC9(capital, taxa, meses, variante) {
+    const resposta = variante % 2 === 0 ? 'A' : 'B';
+    const outro = resposta === 'A' ? 'B' : 'A';
+    const fator = numero(1 + taxa / 100);
+    const acrescimo = moeda(capital * taxa / 100);
+    const contas = {
+      [resposta]: `${moeda(capital)} × (${fator}) elevado a ${meses}`,
+      [outro]: `${moeda(capital)} + (${acrescimo} × ${meses})`,
+    };
+    return {
+      formato: 'comparacao',
+      enunciado: `Duas pessoas calcularam o saldo de ${moeda(capital)} a ${percentual(taxa)} ao mês por ${meses} meses.\n\nConta A · ${contas.A}\nConta B · ${contas.B}\n\nQual conta usa juros compostos? Escolha A ou B e explique o que acontece com o saldo a cada mês.`,
+      resposta,
+      dica: 'Compare as duas contas. Em qual delas o mesmo fator multiplica o saldo que já foi atualizado no mês anterior?',
+      resolucao: `A conta ${resposta} usa juros compostos. A potência repete a multiplicação por ${fator} em cada mês. Assim, os juros incidem sobre o saldo atualizado. A conta ${outro} soma um acréscimo fixo de ${acrescimo} por mês, como em juros simples.`,
+    };
+  }
+
+  function lerComparacao(texto) {
+    const mensagem = normalizarTexto(texto);
+    const rotulo = mensagem.match(/^(?:(?:eu\s+)?(?:escolho|escolhi|acho que e|e)\s+)?(?:a\s+)?(?:conta|opcao|alternativa)\s+([ab])\b/)
+      || mensagem.match(/^(?:(?:eu\s+)?(?:escolho|escolhi|acho que e|e)\s+(?:a\s+)?)?([ab])(?=\s*(?:$|[,.:;!?()\p{Pd}]|\b(?:porque|pois|ja que)\b))/u);
+    const escolha = rotulo?.[1].toUpperCase();
+    if (!escolha && /^(?:o que|como|qual|por que|pode me)\b/.test(mensagem)) return { escolha, motivo: null };
+    const trechos = (rotulo ? mensagem.slice(rotulo[0].length) : mensagem).split(/[!?;]|[.,](?=\s)|\b(?:mas|enquanto|ao contrario|e sim)\b/);
+    const motivos = new Set();
+    for (const trecho of trechos) {
+      const outraConta = trecho.match(/\b(?:conta|opcao|alternativa)\s+([ab])\b/)?.[1].toUpperCase();
+      if (escolha && outraConta && outraConta !== escolha) continue;
+      const negado = /\b(?:nao|nunca)\b/.test(trecho);
+      const baseAtualizada = /(?:saldo|base|valor|montante).{0,24}(?:atualiz|acumul|anterior|passado)|base.{0,12}muda/.test(trecho);
+      const fatorPorPeriodo = /(?:reaplica|repete|multiplica).{0,38}fator.{0,35}(?:cada|mensal|vezes|meses|periodos)|(?:expoente|potencia).{0,50}(?:meses|periodos|cada mes)/.test(trecho);
+      const jurosAcumulados = /juros (?:sobre|dos|em cima de) juros|juros.{0,36}(?:reinvest|entram na base|entram no saldo|incorpor)/.test(trecho);
+      const composto = jurosAcumulados || baseAtualizada || fatorPorPeriodo;
+      const simples = /(?:acrescimo|valor|juros) fixo|(?:sempre|todo mes|a cada mes).{0,24}capital inicial|capital inicial.{0,24}(?:em todos|todo mes|a cada mes)|mesma base|(?:soma|somou).{0,32}(?:mesmo valor|mesma quantia)/.test(trecho);
+      if (composto && !negado) motivos.add('composto');
+      if ((composto && negado) || (simples && !negado)) motivos.add('simples');
+    }
+    return { escolha, motivo: motivos.size === 1 ? motivos.values().next().value : null };
+  }
+
   function problema(id, sorteio = Math.random) {
     const quantidade = totalVariantes(id);
     const variante = Math.min(quantidade - 1, Math.floor(sorteio() * quantidade));
-    const indice = variante % 4;
+    const indice = variante % variantesPorModelo;
     const capital = [400, 500, 800, 1200][indice];
     const taxa = [5, 8, 10, 12][indice];
     const meses = [3, 4, 2, 5][indice];
     if (id === 9) {
-      if (variante < 4) return problemaC9(capital, taxa, meses);
+      const modelo = modeloDaVariante(variante);
+      if (modelo === 0) return problemaC9(capital, taxa, meses);
+      if (modelo === 2) return comparacaoC9(capital, taxa, meses, indice);
       const anos = [1, 2, 1, 2][indice];
       return problemaC9(capital, [1, 1.5, 2, 2.5][indice], anos * 12, anos);
     }
@@ -191,7 +251,7 @@ const Dominio = (() => {
   }
 
   function interpretarC9Local(texto, fase) {
-    const mensagem = texto.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim();
+    const mensagem = normalizarTexto(texto);
     const valores = numerosNoTexto(mensagem);
     const pergunta = /\?|^(?:o que|qual|quanto|como|por que|pode me)\b/.test(mensagem);
     if (/\b(?:chutei|chute|palpite|so adivinhei)\b/.test(mensagem)) return 'palpite';
@@ -217,7 +277,7 @@ const Dominio = (() => {
 
   function interpretarLocal(id, texto, fase) {
     if (id === 9) return interpretarC9Local(texto, fase);
-    const mensagem = texto.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim();
+    const mensagem = normalizarTexto(texto);
     if (/\b(?:me ajuda|uma dica|travei|nao sei por onde|estou perdid[oa])\b/.test(mensagem)) return 'ajuda';
     if (/(?:^|\b)(?:o que (?:e|significa)|qual (?:e )?a diferenca)\b/.test(mensagem)) return 'conceito';
     if (/^(?:como|por que|qual|quanto|devo|eu devo|e se)\b/.test(mensagem)
@@ -230,7 +290,7 @@ const Dominio = (() => {
     return mensagem.endsWith('?') ? 'duvida' : 'ambigua';
   }
 
-  return { conceitos, diagnostico, estado, rotulos, pontuar, pendentes, sugerir, confere, lerNumero, problema, totalVariantes, identificarErro, desafio, tiposChat, numerosNoTexto, interpretarLocal, explicarConceito };
+  return { conceitos, diagnostico, estado, rotulos, pontuar, pendentes, sugerir, confere, lerNumero, problema, totalVariantes, sortearVariante, identificarErro, desafio, tiposChat, numerosNoTexto, interpretarLocal, explicarConceito, lerComparacao };
 })();
 
 if (typeof module !== 'undefined') module.exports = Dominio;

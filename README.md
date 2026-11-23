@@ -22,7 +22,7 @@ Abra [http://127.0.0.1:3000](http://127.0.0.1:3000). Nos 14 chats, o Gemini clas
 
 1. **Diagnóstico inicial.** O estudante escolhe um objetivo e responde a duas ou três questões sobre seus pré-requisitos diretos. Pode optar pelas 14 questões ou completar as restantes depois pelo botão **Diagnóstico** no mapa. Cada acerto garante pelo menos 50 pontos no conceito. Um erro inicia em 0 se o conceito ainda estiver sem nota.
 2. **Mapa de conceitos.** As setas ligam cada pré-requisito ao conceito que depende dele. Os nós tracejados indicam conceitos **Não avaliados**. Após uma resposta no diagnóstico ou na prática, o nó passa a iniciante (0–29), em progresso (30–69) ou dominado (70–100). Ao abrir um tópico com pré-requisitos ainda não avaliados, o estudante pode avaliá-los naquele momento.
-3. **Prática no chat.** Ao selecionar um conceito, o estudante recebe um exercício. Se um pré-requisito direto estiver abaixo de 50 pontos, o tutor sugere revisá-lo e oferece a opção de continuar. Cada conceito tem um modelo de exercício com quatro variações de valores. O C9 tem dois modelos, com prazo em meses ou em anos, além do desafio de abertura.
+3. **Prática no chat.** Ao selecionar um conceito, o estudante recebe um exercício. Se um pré-requisito direto estiver abaixo de 50 pontos, o tutor sugere revisá-lo e oferece a opção de continuar. O sorteio guarda as variações já vistas por conceito durante a sessão. Quando todas aparecem, inicia uma nova rodada. Os demais conceitos têm quatro variações cada. O C9 tem 12, distribuídas entre cálculo direto, conversão de prazo e comparação de contas.
 
 Na prática, um acerto sem dica soma 15 pontos e um acerto com dica soma 7. O primeiro erro sem dica aciona uma pergunta-guia sem alterar a nota. Um erro com dica desconta 5 pontos, e abrir a resolução antes de enviar uma resposta numérica desconta 3. A nota fica entre 0 e 100.
 
@@ -34,14 +34,14 @@ A estratégia **Desafios Produtivos** (*Productive Failure*) aparece na primeira
 
 1. **Exploração.** O tutor apresenta o problema e adapta a pergunta-guia ao raciocínio do aluno. Dúvidas de vocabulário e pedidos de ajuda recebem orientação sem contar como tentativas.
 2. **Consolidação.** O tutor retoma a tentativa, compara o acréscimo fixo com o acréscimo sobre o saldo atualizado e só então apresenta a fórmula `M = C × (1 + i)ᵗ`.
-3. **Prática.** Um problema com outros valores permite aplicar a ideia em uma nova situação. A pontuação passa a ser avaliada nesse exercício.
+3. **Prática.** O estudante aplica a ideia em exercícios com formatos diferentes. Na comparação, escolhe a conta A ou B e explica por que ela usa juros compostos. O JavaScript só corrige e pontua a comparação depois que há uma escolha e uma justificativa reconhecível.
 
 ## Como testar
 
 Selecione **Calcular juros compostos** e responda às três questões sobre potenciação, período da taxa e juros sobre juros. Confira se o restante do mapa aparece como **Não avaliado** e se o botão **Diagnóstico** permite completar as 11 questões restantes. Se aparecer uma sugestão de revisão ao abrir um conceito, clique em **Tentar mesmo assim**. No modo com Gemini, confira se o tutor retoma um trecho do que você escreveu antes de dar a orientação.
 
 - **C5.** Pergunte “Multiplico ou divido por 12?”. Confira se a dica orienta a converter o prazo para a unidade da taxa e se a nota só muda depois da resposta.
-- **C9.** Pergunte “O que significa saldo?” e depois tente “As duas terminam com R$ 1.300 porque entram R$ 100 todo mês”. Confira se o tutor responde à dúvida, faz uma pergunta-guia e apresenta a fórmula na consolidação. Na prática, se o prazo vier em anos, use esse número como expoente e confira a sugestão de revisar C5.
+- **C9.** Pergunte “O que significa saldo?” e depois tente “As duas terminam com R$ 1.300 porque entram R$ 100 todo mês”. Confira se a fórmula aparece na consolidação. Na prática, experimente os três formatos. Na comparação de contas, envie primeiro só A ou B e confira se o tutor pede a justificativa antes de alterar a nota.
 - **C14.** Diga “Somei as parcelas sem trazer os valores para hoje”. Confira se o tutor orienta a comparar na mesma data. Envie o custo calculado para testar a correção.
 
 Execute `node --test` para rodar os testes automatizados com respostas simuladas do Gemini, sem chave.

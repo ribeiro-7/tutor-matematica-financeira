@@ -90,6 +90,7 @@ function montarTutor(consultar, chave = 'chave-ficticia', diagnosticoConcluido =
     tentativas: () => executar('sessoes.get(ativo).tentativas.length'),
     praticar: () => executar('iniciarPratica(sessoes.get(ativo))'),
     sortear: (valor) => executar(`Math.random = () => ${valor}`),
+    variante: () => executar('sessoes.get(ativo).ultimaVariante'),
     ativo: () => executar('ativo'),
     acao: (texto) => atividade.encontrar(texto),
     escolherObjetivo: (texto) => atividade.localizar((el) => el.tag === 'button' && el.encontrar(texto)).eventos.click(),
@@ -327,7 +328,7 @@ test('C5 dá uma dica específica quando o estudante usa anos como períodos men
 test('C9 reconhece o expoente em anos e permite revisar C5 sem abandonar a tentativa', async () => {
   const tutor = montarTutor(undefined, '');
   tutor.selecionar(9);
-  tutor.sortear(0.5);
+  tutor.sortear(1 / 3);
   tutor.praticar();
   assert.match(tutor.fala(), /1% ao mês por 1 ano/);
   await tutor.enviar('404');
@@ -355,4 +356,63 @@ test('C9 sugere C8 para montante simples e C14 sugere C12 para o total nominal',
   assert.match(tutor.fala(), /soma nominal das parcelas/);
   assert.ok(tutor.acao('Revisar C12 · Parcelamento'));
   assert.equal(tutor.nota(14), 50);
+});
+
+test('o sorteio completa cada rodada por conceito e alterna os três modelos do C9', () => {
+  const tutor = montarTutor(undefined, '');
+  tutor.selecionar(9);
+  const variantes = [];
+  for (let i = 0; i < 12; i += 1) {
+    tutor.praticar();
+    variantes.push(tutor.variante());
+    if (i === 4) {
+      tutor.selecionar(5);
+      assert.equal(tutor.variante(), 0);
+      tutor.selecionar(9);
+      assert.equal(tutor.variante(), variantes.at(-1));
+    }
+  }
+  assert.equal(new Set(variantes).size, 12);
+  for (let i = 0; i < variantes.length; i += 3) {
+    assert.equal(new Set(variantes.slice(i, i + 3).map((id) => Math.floor(id / 4))).size, 3);
+  }
+  tutor.praticar();
+  assert.notEqual(tutor.variante(), variantes.at(-1));
+  tutor.selecionar(5);
+  const c5 = [tutor.variante()];
+  for (let i = 0; i < 3; i += 1) {
+    tutor.praticar();
+    c5.push(tutor.variante());
+  }
+  assert.equal(new Set(c5).size, 4);
+  tutor.praticar();
+  assert.notEqual(tutor.variante(), c5.at(-1));
+});
+
+test('a comparação do C9 pede justificativa e mantém os pontos do acerto sem dica', async () => {
+  const tutor = montarTutor(geminiSimulado(() => respostaGemini('duvida')));
+  tutor.selecionar(9);
+  tutor.sortear(2 / 3);
+  tutor.praticar();
+  assert.match(tutor.fala(), /Conta A[\s\S]+Conta B/);
+  await tutor.enviar('A');
+  assert.match(tutor.fala(), /explique o que acontece/);
+  assert.equal(tutor.nota(9), 50);
+  await tutor.enviar('Porque os juros incidem sobre o saldo do mês anterior.');
+  assert.match(tutor.fala(), /A conta A usa juros compostos/);
+  assert.equal(tutor.nota(9), 65);
+  assert.equal(tutor.fase(), 'finalizada');
+});
+
+test('na comparação do C9, uma justificativa incorreta gera dica e o acerto seguinte vale sete', async () => {
+  const tutor = montarTutor(undefined, '');
+  tutor.selecionar(9);
+  tutor.sortear(0.75);
+  tutor.praticar();
+  await tutor.enviar('B, pois usa sempre o capital inicial como base.');
+  assert.match(tutor.fala(), /Compare as duas contas/);
+  assert.equal(tutor.nota(9), 50);
+  await tutor.enviar('Conta B, porque não soma um valor fixo, multiplica pelo mesmo fator a cada mês.');
+  assert.match(tutor.fala(), /A conta B usa juros compostos/);
+  assert.equal(tutor.nota(9), 57);
 });
