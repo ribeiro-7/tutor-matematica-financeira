@@ -60,16 +60,27 @@ function respostaGemini(tipo, forma = 'nenhuma', trecho = '') {
   });
 }
 
-function montarTutor(consultar, chave = 'chave-ficticia', diagnosticoConcluido = true) {
+function montarTutor(consultar, chave = 'chave-ficticia', diagnosticoConcluido = true, {
+  protocolo = 'http:', armazenamento = new Map(), historico = { state: null, replaceState(estado) { this.state = estado; } },
+} = {}) {
   const servidor = criarServidor(chave, consultar);
   const elementos = {};
+  const eventosJanela = {};
   const contexto = createContext({
     document: {
       querySelector: (chave) => elementos[chave] ??= new Elemento(),
       createElement: (tag) => new Elemento(tag),
     },
-    location: { protocol: 'http:', hostname: '127.0.0.1' },
-    window: { matchMedia: () => ({ matches: false }) },
+    location: { protocol: protocolo, hostname: '127.0.0.1' },
+    window: {
+      matchMedia: () => ({ matches: false }),
+      addEventListener: (evento, acao) => { eventosJanela[evento] = acao; },
+      history: historico,
+      sessionStorage: {
+        getItem: (id) => armazenamento.get(id),
+        setItem: (id, valor) => armazenamento.set(id, valor),
+      },
+    },
     ResizeObserver: class { observe() {} },
     AbortSignal,
     fetch: (url, opcoes) => requisitar(servidor, url, opcoes),
@@ -97,6 +108,18 @@ function montarTutor(consultar, chave = 'chave-ficticia', diagnosticoConcluido =
     menuDiagnostico: () => elementos['#diagnostic-menu'].eventos.click(),
     estado: (id) => executar(`nos.get(${id}).dataset.estado`),
     questaoAtual: () => executar('avaliacao?.ids[avaliacao.atual]'),
+    recarregar: () => {
+      eventosJanela.pagehide();
+      return montarTutor(consultar, chave, false, { protocolo, armazenamento, historico });
+    },
+    rascunho: () => atividade.querySelector('textarea').value,
+    digitar: (texto) => {
+      const caixa = atividade.querySelector('textarea');
+      caixa.value = texto;
+      caixa.eventos.input();
+    },
+    opcaoMarcada: (opcao) => atividade.querySelector('fieldset').children[opcao + 1].querySelector('input').checked,
+    marcar: (opcao) => atividade.querySelector('fieldset').children[opcao + 1].querySelector('input').eventos.change(),
     responder: (opcao) => {
       const formulario = atividade.querySelector('form');
       formulario.querySelector('fieldset').children[opcao + 1].querySelector('input').eventos.change();
@@ -415,4 +438,77 @@ test('na comparação do C9, uma justificativa incorreta gera dica e o acerto se
   await tutor.enviar('Conta B, porque não soma um valor fixo, multiplica pelo mesmo fator a cada mês.');
   assert.match(tutor.fala(), /A conta B usa juros compostos/);
   assert.equal(tutor.nota(9), 57);
+});
+
+test('recarregar na mesma aba restaura a pergunta e as opções marcadas no diagnóstico', () => {
+  const tutor = montarTutor(undefined, '', false);
+  tutor.escolherObjetivo('Calcular juros compostos');
+  tutor.responder(Dominio.diagnostico[1][2]);
+  const correta = Dominio.diagnostico[4][2];
+  tutor.marcar(correta);
+  const recarregado = tutor.recarregar();
+  assert.equal(recarregado.questaoAtual(), 5);
+  assert.equal(recarregado.opcaoMarcada(correta), true);
+  recarregado.responder(correta);
+  recarregado.responder(Dominio.diagnostico[7][2]);
+  const resumo = recarregado.recarregar();
+  assert.ok(resumo.acao('3 de 3'));
+  assert.equal(resumo.nota(5), 50);
+  assert.equal(resumo.estado(9), 'unassessed');
+});
+
+test('recarregar o chat preserva a dica, a nota, o exercício, o rascunho e o sorteio', async () => {
+  const tutor = montarTutor(undefined, '');
+  tutor.selecionar(5);
+  await tutor.enviar('36');
+  tutor.acao('Novo exercício').eventos.click();
+  tutor.acao('Pedir ajuda').eventos.click();
+  const variante = tutor.variante();
+  const dica = tutor.fala();
+  tutor.digitar('48');
+  const recarregado = tutor.recarregar();
+  assert.equal(recarregado.ativo(), 5);
+  assert.equal(recarregado.fase(), 'pratica');
+  assert.equal(recarregado.nota(5), 65);
+  assert.equal(recarregado.variante(), variante);
+  assert.equal(recarregado.fala(), dica);
+  assert.equal(recarregado.rascunho(), '48');
+  await recarregado.enviar('48');
+  assert.equal(recarregado.nota(5), 72);
+  recarregado.acao('Novo exercício').eventos.click();
+  assert.notEqual(recarregado.variante(), 0);
+  assert.notEqual(recarregado.variante(), variante);
+});
+
+test('o progresso também é recuperado com o index.html aberto como arquivo', () => {
+  const tutor = montarTutor(undefined, '', false, { protocolo: 'file:' });
+  tutor.escolherObjetivo('Entender juros simples');
+  tutor.responder(Dominio.diagnostico[2][2]);
+  const recarregado = tutor.recarregar();
+  assert.equal(recarregado.questaoAtual(), 4);
+});
+
+test('uma mensagem interrompida pelo recarregamento volta como rascunho', async () => {
+  let recebeu;
+  const consulta = new Promise((resolve) => { recebeu = resolve; });
+  let chamadas = 0;
+  const tutor = montarTutor(geminiSimulado(() => {
+    chamadas += 1;
+    if (chamadas === 1) {
+      recebeu();
+      return new Promise(() => {});
+    }
+    return respostaGemini('tentativa');
+  }));
+  tutor.selecionar(5);
+  const resposta = 'São 36 meses.';
+  void tutor.enviar(resposta);
+  await consulta;
+  const recarregado = tutor.recarregar();
+  assert.equal(chamadas, 1);
+  assert.equal(recarregado.nota(5), 50);
+  assert.equal(recarregado.rascunho(), resposta);
+  await recarregado.enviar(resposta);
+  assert.equal(chamadas, 2);
+  assert.equal(recarregado.nota(5), 65);
 });

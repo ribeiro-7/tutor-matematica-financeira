@@ -4,6 +4,8 @@ const atividade = document.querySelector('#activity');
 const mapa = document.querySelector('#map');
 const grafo = document.querySelector('#edges');
 const menuDiagnostico = document.querySelector('#diagnostic-menu');
+const avisoSessao = document.querySelector('#session-status');
+const chaveSessao = 'juros-em-jogo:sessao:v1';
 const notas = Array(Dominio.conceitos.length + 1).fill(null);
 const respostasDiagnostico = new Map();
 const sessoes = new Map();
@@ -18,6 +20,82 @@ let servidorSemIA = false;
 let avaliacao = null;
 let diagnosticado = false;
 let ativo = null;
+let tela = { tipo: 'objetivos', retorno: null };
+
+function salvarSessao() {
+  const conversas = [...sessoes].map(([id, { ocupada, modoIA, ...sessao }]) => {
+    if (ocupada) {
+      // Um turno interrompido volta como rascunho e pode ser enviado de novo.
+      sessao.rascunho = sessao.mensagens.at(-1).texto;
+      sessao.mensagens = sessao.mensagens.slice(0, -1);
+    }
+    return [id, sessao];
+  });
+  const dados = JSON.stringify({
+    notas, ativo, tela, diagnosticado, conversas,
+    respostas: [...respostasDiagnostico],
+    avaliacao: avaliacao && { ...avaliacao, escolhas: [...avaliacao.escolhas] },
+  });
+  try {
+    if (location.protocol === 'file:') {
+      window.history.replaceState({ ...window.history.state, [chaveSessao]: dados }, '');
+    } else {
+      window.sessionStorage.setItem(chaveSessao, dados);
+    }
+    avisoSessao.hidden = true;
+  } catch {
+    avisoSessao.hidden = false;
+  }
+}
+
+function restaurarSessao() {
+  let dados;
+  let conversas;
+  let respostas;
+  let diagnosticoEmAndamento;
+  try {
+    const salvo = location.protocol === 'file:' ? window.history.state?.[chaveSessao] : window.sessionStorage.getItem(chaveSessao);
+    if (!salvo) return;
+    dados = JSON.parse(salvo);
+    if (dados?.notas?.length !== notas.length || !Array.isArray(dados.notas)
+      || dados.notas.some((nota) => nota !== null && (!Number.isInteger(nota) || nota < 0 || nota > 100))
+      || !Array.isArray(dados.conversas) || !Array.isArray(dados.respostas)) return;
+    conversas = new Map(dados.conversas);
+    respostas = new Map(dados.respostas);
+    if (dados.avaliacao) {
+      const { ids, atual, todos, escolhas } = dados.avaliacao;
+      if (!Array.isArray(ids) || !Array.isArray(todos) || !Array.isArray(escolhas)
+        || !Number.isInteger(atual) || !Dominio.conceitos[ids[atual] - 1]) return;
+      diagnosticoEmAndamento = { ...dados.avaliacao, escolhas: new Map(escolhas) };
+    }
+  } catch {
+    return;
+  }
+  notas.splice(0, notas.length, ...dados.notas);
+  for (const [id, sessao] of conversas) {
+    if (Dominio.conceitos[id - 1] && Array.isArray(sessao?.mensagens)) sessoes.set(id, sessao);
+  }
+  for (const [id, acertou] of respostas) respostasDiagnostico.set(id, acertou);
+  diagnosticado = dados.diagnosticado === true;
+  avaliacao = diagnosticoEmAndamento ?? null;
+  if (dados.tela?.tipo === 'chat' && diagnosticado && sessoes.has(dados.ativo)) {
+    ativo = dados.ativo;
+    tela = { tipo: 'chat' };
+  } else if (avaliacao) {
+    tela = { tipo: 'diagnostico' };
+  } else if (dados.tela?.tipo === 'resumo' && diagnosticado) {
+    tela = dados.tela;
+  } else if (dados.tela?.tipo === 'objetivos') {
+    tela.retorno = sessoes.has(dados.tela.retorno) ? dados.tela.retorno : null;
+  }
+}
+
+function mostrarTela(destino, ...conteudo) {
+  tela = destino;
+  atividade.replaceChildren(...conteudo);
+  salvarSessao();
+}
+
 function elemento(tag, classe, texto) {
   const no = document.createElement(tag);
   if (classe) no.className = classe;
@@ -139,7 +217,7 @@ function exibirObjetivos(retorno = null, focar = false) {
   else if (restantes < total) rotulo = `Completar diagnóstico · ${restantes} ${restantes === 1 ? 'questão restante' : 'questões restantes'}`;
   corpo.append(botao(rotulo, 'secondary', () => iniciarDiagnostico(null, retorno)));
   if (retorno !== null) corpo.append(botao('Voltar ao chat', 'text-button', () => selecionar(retorno)));
-  atividade.replaceChildren(cabecalho, corpo);
+  mostrarTela({ tipo: 'objetivos', retorno }, cabecalho, corpo);
   if (focar) moverFoco();
 }
 
@@ -161,7 +239,6 @@ function exibirDiagnostico(focar = false) {
   const { objetivo, retorno, ids, atual, escolhas } = avaliacao;
   const id = ids[atual];
   const [enunciado, opcoes] = Dominio.diagnostico[id - 1];
-  atividade.replaceChildren();
   const cabecalho = elemento('div', 'panel-heading');
   const titulo = elemento('h2', '', objetivo === null ? 'Diagnóstico completo' : 'Diagnóstico por objetivo');
   titulo.tabIndex = -1;
@@ -187,6 +264,7 @@ function exibirDiagnostico(focar = false) {
       escolhas.set(id, i);
       barra.value = escolhas.size;
       avancar.disabled = false;
+      salvarSessao();
     });
     label.append(radio, elemento('span', '', opcao));
     grupo.append(label);
@@ -209,7 +287,7 @@ function exibirDiagnostico(focar = false) {
     }
     concluirDiagnostico();
   });
-  atividade.append(cabecalho, formulario);
+  mostrarTela({ tipo: 'diagnostico' }, cabecalho, formulario);
   if (focar) moverFoco();
 }
 
@@ -246,7 +324,7 @@ function exibirResumo(objetivo, acertos, total, retorno) {
   if (retorno !== null && retorno !== recomendado?.id) {
     corpo.append(botao('Voltar ao chat', 'text-button', () => selecionar(retorno)));
   }
-  atividade.replaceChildren(topo, corpo);
+  mostrarTela({ tipo: 'resumo', objetivo, acertos, total, retorno }, topo, corpo);
   moverFoco();
 }
 
@@ -532,18 +610,21 @@ async function interpretarMensagem(sessao, id, mensagem, ultimaFalaTutor) {
 
 async function enviarMensagem(sessao, texto, id) {
   if (sessao.ocupada || !['exploracao', 'pratica'].includes(sessao.fase)) return;
+  sessao.rascunho = '';
   const ultimaFalaTutor = sessao.mensagens.findLast(({ autor }) => autor === 'tutor')?.texto || '';
   registrar(sessao, texto, 'aluno');
   if (sessao.fase === 'pratica' && (Dominio.lerNumero(texto) !== null
     || (sessao.problema.formato === 'comparacao' && /^[ab]$/i.test(texto)))) {
     responderPratica(sessao, texto, id);
     if (ativo === id) exibirChat(false, true);
+    else salvarSessao();
     return;
   }
   let interpretacao;
   if (podeConsultarGemini && !servidorSemIA) {
     sessao.ocupada = true;
-    exibirChat();
+    if (ativo === id) exibirChat();
+    else salvarSessao();
     interpretacao = await interpretarMensagem(sessao, id, texto, ultimaFalaTutor.slice(0, 650));
     sessao.ocupada = false;
   } else {
@@ -558,6 +639,7 @@ async function enviarMensagem(sessao, texto, id) {
     devolutiva.texto = `${retomada}\n\n${devolutiva.texto}`;
   }
   if (ativo === id) exibirChat(false, true);
+  else salvarSessao();
 }
 
 function exibirChat(focar = false, focarCaixa = false) {
@@ -607,6 +689,8 @@ function exibirChat(focar = false, focarCaixa = false) {
     caixa.rows = 2;
     caixa.maxLength = 600;
     caixa.required = true;
+    caixa.value = sessao.rascunho || '';
+    caixa.addEventListener('input', () => { sessao.rascunho = caixa.value; });
     caixa.placeholder = sessao.fase === 'exploracao' ? 'Conte como você pensou…'
       : sessao.problema.formato === 'comparacao' ? 'Escolha A ou B e explique…' : 'Digite sua resposta…';
     caixa.setAttribute('aria-label', caixa.placeholder);
@@ -675,10 +759,19 @@ function exibirChat(focar = false, focarCaixa = false) {
     aviso.setAttribute('role', 'status');
     rodape.append(aviso);
   }
-  atividade.replaceChildren(heading, faixa, historico, rodape);
+  mostrarTela({ tipo: 'chat' }, heading, faixa, historico, rodape);
   historico.scrollTop = historico.scrollHeight;
   if (focar) moverFoco();
   if (focarCaixa) (caixa || acoes.querySelector('button'))?.focus({ preventScroll: true });
 }
 
-exibirObjetivos();
+restaurarSessao();
+window.addEventListener('pagehide', salvarSessao);
+if (tela.tipo === 'objetivos') {
+  exibirObjetivos(tela.retorno);
+} else {
+  atualizarMapa();
+  if (tela.tipo === 'chat') exibirChat();
+  else if (tela.tipo === 'diagnostico') exibirDiagnostico();
+  else exibirResumo(tela.objetivo, tela.acertos, tela.total, tela.retorno);
+}
