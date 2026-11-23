@@ -27,8 +27,11 @@
     <div class="workspace">
       <section class="panel map-panel" aria-labelledby="map-title">
         <div class="panel-heading">
-          <div><h2 id="map-title">Mapa de conceitos</h2><p id="map-caption">Faça o diagnóstico para descobrir por onde começar.</p></div>
-          <span id="mastered" class="pill" hidden></span>
+          <div><h2 id="map-title">Mapa de conceitos</h2><p id="map-caption">Escolha o que quer estudar para começar.</p></div>
+          <div class="map-actions">
+            <span id="mastered" class="pill" hidden></span>
+            <button id="diagnostic-menu" type="button" class="secondary small" hidden>Diagnóstico</button>
+          </div>
         </div>
         <div class="map-scroll" tabindex="0" role="region" aria-label="Mapa rolável de conceitos">
           <div class="map" id="map">
@@ -36,6 +39,7 @@
           </div>
         </div>
         <ul class="legend" aria-label="Legenda do mapa">
+          <li><span class="dot unassessed"></span>Não avaliado</li>
           <li><span class="dot initial"></span>Iniciante</li>
           <li><span class="dot progressing"></span>Em progresso</li>
           <li><span class="dot mastered"></span>Dominado</li>

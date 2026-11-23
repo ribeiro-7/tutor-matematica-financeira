@@ -10,7 +10,8 @@ const Dominio = require('../dominio.js');
 const { criarServidor } = require('../servidor.js');
 
 class Elemento {
-  constructor() {
+  constructor(tag) {
+    this.tag = tag;
     this.children = [];
     this.eventos = {};
     this.dataset = {};
@@ -22,13 +23,16 @@ class Elemento {
   hasChildNodes() { return this.children.length > 0; }
   addEventListener(evento, acao) { this.eventos[evento] = acao; }
   setAttribute() {}
-  querySelector() { return undefined; }
+  querySelector(tag) { return this.localizar((elemento) => elemento.tag === tag); }
   focus() {}
   getContext() { return new Proxy({}, { get: () => () => {} }); }
   encontrar(texto) {
-    if (this.textContent === texto) return this;
+    return this.localizar((elemento) => elemento.textContent === texto);
+  }
+  localizar(teste) {
+    if (teste(this)) return this;
     for (const filho of this.children) {
-      const encontrado = filho.encontrar(texto);
+      const encontrado = filho.localizar(teste);
       if (encontrado) return encontrado;
     }
   }
@@ -56,13 +60,13 @@ function respostaGemini(tipo, forma = 'nenhuma', trecho = '') {
   });
 }
 
-function montarTutor(consultar, chave = 'chave-ficticia') {
+function montarTutor(consultar, chave = 'chave-ficticia', diagnosticoConcluido = true) {
   const servidor = criarServidor(chave, consultar);
   const elementos = {};
   const contexto = createContext({
     document: {
       querySelector: (chave) => elementos[chave] ??= new Elemento(),
-      createElement: () => new Elemento(),
+      createElement: (tag) => new Elemento(tag),
     },
     location: { protocol: 'http:', hostname: '127.0.0.1' },
     window: { matchMedia: () => ({ matches: false }) },
@@ -74,7 +78,9 @@ function montarTutor(consultar, chave = 'chave-ficticia') {
   for (const arquivo of ['dominio.js', 'app.js']) {
     executar(readFileSync(join(__dirname, '..', arquivo), 'utf8'));
   }
-  executar('Math.random = () => 0; diagnosticado = true; notas.fill(50)');
+  executar('Math.random = () => 0');
+  if (diagnosticoConcluido) executar('diagnosticado = true; notas.fill(50)');
+  const atividade = elementos['#activity'];
   return {
     selecionar: (id) => executar(`selecionar(${id})`),
     enviar: (texto) => executar(`enviarMensagem(sessoes.get(ativo), ${JSON.stringify(texto)}, ativo)`),
@@ -85,7 +91,16 @@ function montarTutor(consultar, chave = 'chave-ficticia') {
     praticar: () => executar('iniciarPratica(sessoes.get(ativo))'),
     sortear: (valor) => executar(`Math.random = () => ${valor}`),
     ativo: () => executar('ativo'),
-    acao: (texto) => elementos['#activity'].encontrar(texto),
+    acao: (texto) => atividade.encontrar(texto),
+    escolherObjetivo: (texto) => atividade.localizar((el) => el.tag === 'button' && el.encontrar(texto)).eventos.click(),
+    menuDiagnostico: () => elementos['#diagnostic-menu'].eventos.click(),
+    estado: (id) => executar(`nos.get(${id}).dataset.estado`),
+    questaoAtual: () => executar('avaliacao?.ids[avaliacao.atual]'),
+    responder: (opcao) => {
+      const formulario = atividade.querySelector('form');
+      formulario.querySelector('fieldset').children[opcao + 1].querySelector('input').eventos.change();
+      formulario.eventos.submit({ preventDefault() {} });
+    },
   };
 }
 
@@ -120,6 +135,74 @@ test('C5 orienta a conversão de prazo e confere o resultado no JavaScript', asy
   await tutor.enviar('36');
   assert.equal(tutor.nota(5), 57);
   assert.equal(chamadas, 1);
+});
+
+test('diagnóstico por objetivo avalia três pré-requisitos de C9 e mantém os demais nós como não avaliados', () => {
+  const tutor = montarTutor(undefined, '', false);
+  assert.equal(tutor.estado(1), 'unassessed');
+  tutor.escolherObjetivo('Calcular juros compostos');
+  for (const id of [2, 5, 8]) {
+    assert.equal(tutor.questaoAtual(), id);
+    tutor.responder(Dominio.diagnostico[id - 1][2]);
+  }
+  assert.ok(tutor.acao('3 de 3'));
+  assert.equal(tutor.estado(2), 'progressing');
+  assert.equal(tutor.estado(9), 'unassessed');
+  tutor.acao('Praticar montante em juros compostos').eventos.click();
+  assert.equal(tutor.fase(), 'exploracao');
+});
+
+test('o diagnóstico completo reaproveita as questões e preserva a nota do chat', async () => {
+  const tutor = montarTutor(undefined, '', false);
+  tutor.escolherObjetivo('Entender juros simples');
+  for (const id of [3, 4]) {
+    assert.equal(tutor.questaoAtual(), id);
+    tutor.responder(Dominio.diagnostico[id - 1][2]);
+  }
+  tutor.acao('Praticar juros simples').eventos.click();
+  await tutor.enviar('60');
+  assert.equal(tutor.nota(6), 15);
+  tutor.menuDiagnostico();
+  tutor.acao('Completar diagnóstico · 12 questões restantes').eventos.click();
+  for (const { id } of Dominio.conceitos.filter(({ id }) => id !== 3 && id !== 4)) {
+    assert.equal(tutor.questaoAtual(), id);
+    const correta = Dominio.diagnostico[id - 1][2];
+    tutor.responder(id === 6 ? (correta + 1) % 4 : correta);
+  }
+  assert.ok(tutor.acao('13 de 14'));
+  assert.equal(tutor.nota(6), 15);
+  assert.equal(tutor.estado(6), 'initial');
+  assert.equal(tutor.nota(3), 50);
+  assert.ok(Dominio.conceitos.every(({ id }) => tutor.estado(id) !== 'unassessed'));
+});
+
+test('o diagnóstico completo pode ser escolhido no início e um erro marca o nó como iniciante', () => {
+  const tutor = montarTutor(undefined, '', false);
+  tutor.acao('Diagnóstico completo · 14 questões').eventos.click();
+  for (const { id } of Dominio.conceitos) {
+    assert.equal(tutor.questaoAtual(), id);
+    const correta = Dominio.diagnostico[id - 1][2];
+    tutor.responder((correta + 1) % 4);
+  }
+  assert.ok(tutor.acao('0 de 14'));
+  assert.equal(tutor.nota(1), 0);
+  assert.equal(tutor.estado(1), 'initial');
+});
+
+test('ao abrir outro conceito, o aluno pode avaliar os pré-requisitos e voltar ao tema', () => {
+  const tutor = montarTutor(undefined, '', false);
+  tutor.escolherObjetivo('Entender juros simples');
+  for (const id of [3, 4]) tutor.responder(Dominio.diagnostico[id - 1][2]);
+  tutor.selecionar(14);
+  tutor.acao('Avaliar pré-requisitos').eventos.click();
+  for (const id of [10, 12]) {
+    assert.equal(tutor.questaoAtual(), id);
+    tutor.responder(Dominio.diagnostico[id - 1][2]);
+  }
+  tutor.acao('Praticar decisão financeira').eventos.click();
+  assert.equal(tutor.fase(), 'pratica');
+  assert.equal(tutor.nota(14), null);
+  assert.ok(tutor.acao('Não avaliado'));
 });
 
 test('C9 esclarece dúvidas antes da fórmula e pontua na prática', async () => {

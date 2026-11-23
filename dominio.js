@@ -48,13 +48,16 @@ const Dominio = (() => {
   const montante = (capital, taxa, meses) => capital * (1 + taxa / 100) ** meses;
   const valorPresente = (parcela, taxa, meses) => parcela / (1 + taxa / 100) ** meses;
   const eventos = { diagnostico: 50, independente: 15, comDica: 7, erroInicial: 0, erroComDica: -5, revelacaoPrecoce: -3 };
-  const pontuar = (nota, evento) => Math.min(100, Math.max(0, nota + eventos[evento]));
-  const estado = (nota) => nota >= 70 ? 'mastered' : nota >= 30 ? 'progressing' : 'initial';
-  const rotulos = { initial: 'Iniciante', progressing: 'Em progresso', mastered: 'Dominado' };
-  const pendentes = (id, notas) => conceitos[id - 1].requisitos.filter((requisito) => notas[requisito] < 50);
+  const pontuar = (nota, evento) => {
+    if (nota === null && evento === 'revelacaoPrecoce') return null;
+    return Math.min(100, Math.max(0, (nota ?? 0) + eventos[evento]));
+  };
+  const estado = (nota) => nota === null ? 'unassessed' : nota >= 70 ? 'mastered' : nota >= 30 ? 'progressing' : 'initial';
+  const rotulos = { unassessed: 'Não avaliado', initial: 'Iniciante', progressing: 'Em progresso', mastered: 'Dominado' };
+  const pendentes = (id, notas) => conceitos[id - 1].requisitos.filter((requisito) => (notas[requisito] ?? 0) < 50);
   const sugerir = (notas, excluir) => [...conceitos]
     .sort((a, b) => a.nivel - b.nivel || a.id - b.id)
-    .find(({ id }) => id !== excluir && notas[id] < 70 && pendentes(id, notas).length === 0);
+    .find(({ id }) => id !== excluir && (notas[id] ?? 0) < 70 && pendentes(id, notas).length === 0);
   const confere = (valor, esperado) =>
     valor !== null && Math.abs(valor - esperado) <= Math.max(0.005, Math.abs(esperado) * 0.005);
   const totalVariantes = (id) => id === 9 ? 8 : 4;

@@ -42,18 +42,24 @@ h1 { font-size: clamp(2rem, 4vw, 3.45rem); letter-spacing: -.055em; line-height:
 .node { position: relative; z-index: 1; min-height: 48px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; text-align: left; gap: 2px; padding: 5px 7px; border: 1px solid #c7d1cd; border-radius: 8px; background: #fff; color: #283e37; line-height: 1.14; }
 .node-id { font-size: .75rem; font-weight: 750; color: #51645e; }
 .node-name { font-size: .875rem; font-weight: 650; }
+.node[data-estado="unassessed"] { background: #f4f7f5; border-style: dashed; border-color: #788f84; }
 .node[data-estado="progressing"] { background: #fff6d9; border-color: #dfc780; color: #4c370c; }
 .node[data-estado="mastered"] { background: #def5e6; border-color: #8bbfa1; color: #124730; }
 .node[aria-pressed="true"] { box-shadow: 0 0 0 2px #216e55; }
 .node:enabled:hover { border-color: #216e55; }
 .legend { display: flex; flex-wrap: wrap; gap: 9px 18px; margin: 0; padding: 14px 22px; list-style: none; border-top: 1px solid var(--line); }
 .legend li { display: flex; align-items: center; gap: 6px; font-size: .875rem; color: var(--muted); }
+.map-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.legend .dot.unassessed { background: transparent; border: 1px dashed #526a5e; }
 .dot { width: 10px; height: 10px; border-radius: 50%; background: #a9b7b0; }
 .dot.progressing { background: #c49629; }
 .dot.mastered { background: #3d9b66; }
 
 .activity-panel { display: flex; flex-direction: column; }
 .quiz, .summary { display: flex; flex-direction: column; align-items: stretch; gap: 16px; padding: 21px 23px 24px; }
+.goals p { color: var(--muted); line-height: 1.5; }
+.goals .goal { display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; padding: 11px 13px; }
+.goal-count { flex: none; font-weight: 500; color: var(--muted); }
 .progress { display: block; width: 100%; height: 8px; border: 0; border-radius: 99px; appearance: none; background: #e7eee9; overflow: hidden; }
 .progress::-webkit-progress-bar { background: #e7eee9; }
 .progress::-webkit-progress-value { background: #267a5c; border-radius: 99px; }

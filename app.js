@@ -3,16 +3,21 @@
 const atividade = document.querySelector('#activity');
 const mapa = document.querySelector('#map');
 const grafo = document.querySelector('#edges');
-const notas = Array(15).fill(0);
-const respostas = Array(14).fill(null);
+const menuDiagnostico = document.querySelector('#diagnostic-menu');
+const notas = Array(Dominio.conceitos.length + 1).fill(null);
+const respostasDiagnostico = new Map();
 const sessoes = new Map();
 const nos = new Map();
 const podeConsultarGemini = location.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(location.hostname);
+const objetivos = [
+  { id: 6, texto: 'Entender juros simples' },
+  { id: 9, texto: 'Calcular juros compostos' },
+  { id: 14, texto: 'Comparar pagamento à vista e parcelado' },
+];
 let servidorSemIA = false;
-let questao = 0;
+let avaliacao = null;
 let diagnosticado = false;
 let ativo = null;
-
 function elemento(tag, classe, texto) {
   const no = document.createElement(tag);
   if (classe) no.className = classe;
@@ -87,99 +92,159 @@ function atualizarMapa() {
   const total = notas.filter((nota) => nota >= 70).length;
   const indicador = document.querySelector('#mastered');
   indicador.hidden = !diagnosticado;
-  indicador.textContent = `${total}/14 dominados`;
-  document.querySelector('#map-caption').textContent = diagnosticado
-    ? 'Selecione um conceito para praticar no chat.'
-    : 'Faça o diagnóstico para descobrir por onde começar.';
+  indicador.textContent = `${total}/${Dominio.conceitos.length} dominados`;
+  menuDiagnostico.hidden = !diagnosticado;
+  menuDiagnostico.disabled = Boolean(avaliacao);
+  document.querySelector('#map-caption').textContent = avaliacao ? 'Conclua o diagnóstico para praticar no chat.'
+    : diagnosticado ? 'Selecione um conceito para praticar no chat.' : 'Escolha o que quer estudar para começar.';
   for (const { id, nome } of Dominio.conceitos) {
     const no = nos.get(id);
     const estado = Dominio.estado(notas[id]);
     no.dataset.estado = estado;
-    no.disabled = !diagnosticado;
+    no.disabled = !diagnosticado || Boolean(avaliacao);
     no.setAttribute('aria-pressed', String(ativo === id));
-    no.setAttribute('aria-label', `C${id}, ${nome}, ${Dominio.rotulos[estado]}${diagnosticado ? `, ${notas[id]} de 100` : ''}`);
+    no.setAttribute('aria-label', `C${id}, ${nome}, ${Dominio.rotulos[estado]}${notas[id] === null ? '' : `, ${notas[id]} de 100`}`);
   }
   desenharLigacoes();
 }
 
 function moverFoco() {
   atividade.querySelector('h2')?.focus({ preventScroll: true });
+  if (window.matchMedia('(max-width: 900px)').matches) atividade.scrollIntoView({ block: 'start' });
+}
+
+menuDiagnostico.addEventListener('click', () => exibirObjetivos(ativo, true));
+
+function exibirObjetivos(retorno = null, focar = false) {
+  ativo = null;
+  avaliacao = null;
+  atualizarMapa();
+  const cabecalho = elemento('div', 'panel-heading');
+  const titulo = elemento('h2', '', 'O que você quer estudar?');
+  titulo.tabIndex = -1;
+  cabecalho.append(titulo);
+  const corpo = elemento('div', 'quiz goals');
+  corpo.append(elemento('p', '', 'Escolha um objetivo para avaliar os pré-requisitos antes de praticar.'));
+  for (const { id, texto } of objetivos) {
+    const restantes = Dominio.conceitos[id - 1].requisitos.filter((item) => !respostasDiagnostico.has(item)).length;
+    const opcao = botao('', 'secondary goal', () => iniciarDiagnostico(id, retorno));
+    opcao.append(elemento('span', '', texto), elemento('span', 'goal-count', restantes
+      ? `${restantes} ${restantes === 1 ? 'questão' : 'questões'}` : 'Ir para o chat'));
+    corpo.append(opcao);
+  }
+  const total = Dominio.conceitos.length;
+  const restantes = total - respostasDiagnostico.size;
+  let rotulo = `Diagnóstico completo · ${total} questões`;
+  if (restantes === 0) rotulo = 'Ver resultado do diagnóstico completo';
+  else if (restantes < total) rotulo = `Completar diagnóstico · ${restantes} ${restantes === 1 ? 'questão restante' : 'questões restantes'}`;
+  corpo.append(botao(rotulo, 'secondary', () => iniciarDiagnostico(null, retorno)));
+  if (retorno !== null) corpo.append(botao('Voltar ao chat', 'text-button', () => selecionar(retorno)));
+  atividade.replaceChildren(cabecalho, corpo);
+  if (focar) moverFoco();
+}
+
+function iniciarDiagnostico(objetivo, retorno = null) {
+  const todos = objetivo === null ? Dominio.conceitos.map(({ id }) => id) : Dominio.conceitos[objetivo - 1].requisitos.toSorted((a, b) => a - b);
+  const ids = todos.filter((id) => !respostasDiagnostico.has(id));
+  if (objetivo !== null && !ids.length) {
+    selecionar(objetivo);
+    return;
+  }
+  ativo = null;
+  avaliacao = { objetivo, retorno, todos, ids, atual: 0, escolhas: new Map() };
+  atualizarMapa();
+  if (ids.length) exibirDiagnostico(true);
+  else concluirDiagnostico();
 }
 
 function exibirDiagnostico(focar = false) {
-  const [enunciado, opcoes] = Dominio.diagnostico[questao];
+  const { objetivo, retorno, ids, atual, escolhas } = avaliacao;
+  const id = ids[atual];
+  const [enunciado, opcoes] = Dominio.diagnostico[id - 1];
   atividade.replaceChildren();
   const cabecalho = elemento('div', 'panel-heading');
-  const titulo = elemento('h2', '', 'Diagnóstico inicial');
+  const titulo = elemento('h2', '', objetivo === null ? 'Diagnóstico completo' : 'Diagnóstico por objetivo');
   titulo.tabIndex = -1;
-  cabecalho.append(titulo, elemento('span', 'pill', `${questao + 1} de ${respostas.length}`));
+  cabecalho.append(titulo, elemento('span', 'pill', `${atual + 1} de ${ids.length}`));
   const formulario = elemento('form', 'quiz');
   const barra = elemento('progress', 'progress');
-  barra.max = respostas.length;
-  barra.value = respostas.filter((resposta) => resposta !== null).length;
+  barra.max = ids.length;
+  barra.value = escolhas.size;
   barra.setAttribute('aria-label', 'Questões respondidas');
   const grupo = elemento('fieldset', 'options');
   grupo.append(elemento('legend', 'question', enunciado));
   const controles = elemento('div', 'quiz-actions');
-  const avancar = elemento('button', 'primary', questao === respostas.length - 1 ? 'Concluir diagnóstico' : 'Próxima questão');
+  const avancar = elemento('button', 'primary', atual === ids.length - 1 ? 'Concluir diagnóstico' : 'Próxima questão');
   avancar.type = 'submit';
-  avancar.disabled = respostas[questao] === null;
+  avancar.disabled = !escolhas.has(id);
   opcoes.forEach((opcao, i) => {
     const label = elemento('label', 'option');
     const radio = elemento('input');
     radio.type = 'radio';
     radio.name = 'resposta';
-    radio.checked = respostas[questao] === i;
+    radio.checked = escolhas.get(id) === i;
     radio.addEventListener('change', () => {
-      respostas[questao] = i;
-      barra.value = respostas.filter((resposta) => resposta !== null).length;
+      escolhas.set(id, i);
+      barra.value = escolhas.size;
       avancar.disabled = false;
     });
     label.append(radio, elemento('span', '', opcao));
     grupo.append(label);
   });
-  const voltar = botao('Voltar', 'secondary', () => {
-    questao -= 1;
-    exibirDiagnostico(true);
-  });
-  voltar.disabled = questao === 0;
+  const voltar = atual === 0
+    ? botao('Voltar aos objetivos', 'secondary', () => exibirObjetivos(retorno, true))
+    : botao('Voltar', 'secondary', () => {
+      avaliacao.atual -= 1;
+      exibirDiagnostico(true);
+    });
   controles.append(voltar, avancar);
-  formulario.append(barra, elemento('p', 'eyebrow', Dominio.conceitos[questao].nome), grupo, controles);
+  formulario.append(barra, elemento('p', 'eyebrow', Dominio.conceitos[id - 1].nome), grupo, controles);
   formulario.addEventListener('submit', (evento) => {
     evento.preventDefault();
-    if (respostas[questao] === null) return;
-    if (questao < respostas.length - 1) {
-      questao += 1;
+    if (!escolhas.has(id)) return;
+    if (atual < ids.length - 1) {
+      avaliacao.atual += 1;
       exibirDiagnostico(true);
       return;
     }
-    const acertos = respostas.reduce((total, valor, i) => {
-      if (valor !== Dominio.diagnostico[i][2]) return total;
-      notas[i + 1] = Dominio.pontuar(0, 'diagnostico');
-      return total + 1;
-    }, 0);
-    diagnosticado = true;
-    atualizarMapa();
-    exibirResumo(acertos);
+    concluirDiagnostico();
   });
   atividade.append(cabecalho, formulario);
   if (focar) moverFoco();
 }
 
-function exibirResumo(acertos) {
-  const recomendado = Dominio.sugerir(notas);
+function concluirDiagnostico() {
+  const { objetivo, todos, escolhas, retorno } = avaliacao;
+  for (const [id, escolha] of escolhas) {
+    const acertou = escolha === Dominio.diagnostico[id - 1][2];
+    respostasDiagnostico.set(id, acertou);
+    const resultado = acertou ? Dominio.pontuar(0, 'diagnostico') : 0;
+    notas[id] = Math.max(notas[id] ?? 0, resultado);
+  }
+  const acertos = todos.filter((id) => respostasDiagnostico.get(id)).length;
+  avaliacao = null;
+  diagnosticado = true;
+  atualizarMapa();
+  exibirResumo(objetivo, acertos, todos.length, retorno);
+}
+
+function exibirResumo(objetivo, acertos, total, retorno) {
+  const recomendado = objetivo === null ? Dominio.sugerir(notas) : Dominio.conceitos[objetivo - 1];
   const topo = elemento('div', 'panel-heading');
   const titulo = elemento('h2', '', 'Diagnóstico concluído');
   titulo.tabIndex = -1;
   topo.append(titulo);
   const corpo = elemento('div', 'summary');
   corpo.append(
-    elemento('p', 'result', `${acertos} de 14`),
-    elemento('p', '', 'As questões acertadas começam com 50 pontos no mapa. A prática no chat atualiza o domínio de cada conceito.'),
-    botao(`Praticar ${recomendado.nome.toLowerCase()}`, 'primary', () => selecionar(recomendado.id))
+    elemento('p', 'result', `${acertos} de ${total}`),
+    elemento('p', '', 'Cada acerto no diagnóstico deixa o conceito com pelo menos 50 pontos. O mapa mostra quais conceitos já foram avaliados.')
   );
-  if (!Dominio.pendentes(9, notas).length) {
+  if (recomendado) corpo.append(botao(`Praticar ${recomendado.nome.toLowerCase()}`, 'primary', () => selecionar(recomendado.id)));
+  if (objetivo === null && !Dominio.pendentes(9, notas).length) {
     corpo.append(botao('Abrir desafio de juros compostos', 'secondary', () => selecionar(9)));
+  }
+  if (retorno !== null && retorno !== recomendado?.id) {
+    corpo.append(botao('Voltar ao chat', 'text-button', () => selecionar(retorno)));
   }
   atividade.replaceChildren(topo, corpo);
   moverFoco();
@@ -190,20 +255,24 @@ function registrar(sessao, texto, autor = 'tutor') {
 }
 
 function selecionar(id) {
-  if (!diagnosticado) return;
+  if (!diagnosticado || avaliacao) return;
   ativo = id;
   if (!sessoes.has(id)) sessoes.set(id, { fase: 'inicio', mensagens: [] });
   const sessao = sessoes.get(id);
-  if (sessao.fase === 'inicio') {
+  if (sessao.fase === 'inicio' || sessao.fase === 'revisao') {
     const pendentes = Dominio.pendentes(id, notas);
+    sessao.mensagens.length = 0;
     if (pendentes.length) {
       sessao.fase = 'revisao';
-      registrar(sessao, `Antes de continuar, sugiro revisar ${pendentes.map((item) => Dominio.conceitos[item - 1].nome.toLowerCase()).join(', ')}. Você também pode tentar este conceito agora.`);
+      const listar = (ids) => ids.map((item) => Dominio.conceitos[item - 1].nome.toLowerCase()).join(', ');
+      const desconhecidos = pendentes.filter((item) => notas[item] === null);
+      const revisar = pendentes.filter((item) => notas[item] !== null);
+      if (desconhecidos.length) registrar(sessao, `Você ainda pode avaliar ${listar(desconhecidos)}.`);
+      if (revisar.length) registrar(sessao, `Antes de continuar, sugiro revisar ${listar(revisar)}.`);
+      registrar(sessao, 'Você também pode tentar este conceito agora.');
     } else {
       iniciarConceito(sessao);
     }
-  } else if (sessao.fase === 'revisao' && !Dominio.pendentes(id, notas).length) {
-    iniciarConceito(sessao);
   }
   atualizarMapa();
   exibirChat(true);
@@ -470,11 +539,16 @@ function exibirChat(focar = false, focarCaixa = false) {
     heading.append(elemento('span', 'pill', 'Consolidação'));
   }
   const faixa = elemento('div', 'score');
-  const indicador = elemento('progress', 'progress');
-  indicador.max = 100;
-  indicador.value = notas[ativo];
-  indicador.setAttribute('aria-label', 'Domínio no conceito');
-  faixa.append(elemento('span', '', 'Domínio'), indicador, elemento('strong', '', `${notas[ativo]}/100`));
+  faixa.append(elemento('span', '', 'Domínio'));
+  if (notas[ativo] === null) {
+    faixa.append(elemento('strong', '', 'Não avaliado'));
+  } else {
+    const indicador = elemento('progress', 'progress');
+    indicador.max = 100;
+    indicador.value = notas[ativo];
+    indicador.setAttribute('aria-label', 'Domínio no conceito');
+    faixa.append(indicador, elemento('strong', '', `${notas[ativo]}/100`));
+  }
   const historico = elemento('div', 'history');
   historico.tabIndex = 0;
   historico.setAttribute('role', 'log');
@@ -530,9 +604,15 @@ function exibirChat(focar = false, focarCaixa = false) {
     acoes.append(ajuda, resolver);
     rodape.append(formulario, acoes);
   } else if (sessao.fase === 'revisao') {
-    const [primeiro] = Dominio.pendentes(ativo, notas);
+    const pendentes = Dominio.pendentes(conceito.id, notas);
+    const primeiroAvaliado = pendentes.find((id) => notas[id] !== null);
+    if (pendentes.some((id) => notas[id] === null)) {
+      acoes.append(botao('Avaliar pré-requisitos', 'primary', () => iniciarDiagnostico(conceito.id, conceito.id)));
+    }
+    if (primeiroAvaliado) {
+      acoes.append(botao(`Revisar C${primeiroAvaliado}`, acoes.hasChildNodes() ? 'secondary' : 'primary', () => selecionar(primeiroAvaliado)));
+    }
     acoes.append(
-      botao(`Revisar C${primeiro}`, 'primary', () => selecionar(primeiro)),
       botao('Tentar mesmo assim', 'secondary', refresh(() => iniciarConceito(sessao)))
     );
   } else {
@@ -560,14 +640,8 @@ function exibirChat(focar = false, focarCaixa = false) {
   }
   atividade.replaceChildren(heading, faixa, historico, rodape);
   historico.scrollTop = historico.scrollHeight;
-  if (focar) {
-    moverFoco();
-    if (window.matchMedia('(max-width: 900px)').matches) {
-      atividade.scrollIntoView({ block: 'start' });
-    }
-  }
+  if (focar) moverFoco();
   if (focarCaixa) (caixa || acoes.querySelector('button'))?.focus({ preventScroll: true });
 }
 
-atualizarMapa();
-exibirDiagnostico();
+exibirObjetivos();
