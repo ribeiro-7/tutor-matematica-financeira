@@ -24,17 +24,19 @@ let ativo = null;
 let tela = { tipo: 'objetivos', retorno: null };
 let efeitoXP = null;
 
+function estadoConversa({ ocupada, modoIA, ...sessao }) {
+  if (ocupada) {
+    // Um turno interrompido volta como rascunho e pode ser enviado de novo.
+    sessao.rascunho = sessao.mensagens.at(-1).texto;
+    sessao.mensagens = sessao.mensagens.slice(0, -1);
+  }
+  return sessao;
+}
+
 function salvarSessao() {
-  const conversas = [...sessoes].map(([id, { ocupada, modoIA, ...sessao }]) => {
-    if (ocupada) {
-      // Um turno interrompido volta como rascunho e pode ser enviado de novo.
-      sessao.rascunho = sessao.mensagens.at(-1).texto;
-      sessao.mensagens = sessao.mensagens.slice(0, -1);
-    }
-    return [id, sessao];
-  });
+  const conversas = [...sessoes].map(([id, sessao]) => [id, estadoConversa(sessao)]);
   const dados = JSON.stringify({
-    notas, ativo, tela, diagnosticado, conversas, duvidas,
+    notas, ativo, tela, diagnosticado, conversas, duvidas: estadoConversa(duvidas),
     respostas: [...respostasDiagnostico],
     avaliacao: avaliacao && { ...avaliacao, escolhas: [...avaliacao.escolhas] },
   });
@@ -387,6 +389,48 @@ function abrirDuvidas() {
   exibirDuvidas(retorno, true);
 }
 
+async function consultarDuvida(tema, texto, emExercicio) {
+  try {
+    const dados = emExercicio ? { id: tema, emExercicio } : { id: tema, emExercicio, pergunta: texto };
+    const resultado = await fetch('/api/duvidas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(7500),
+      body: JSON.stringify(dados),
+    });
+    if (resultado.status === 204) servidorSemIA = true;
+    if (resultado.status === 200) {
+      const { resposta } = await resultado.json();
+      if (typeof resposta === 'string' && resposta.trim()) return resposta;
+    }
+  } catch {
+    // A explicação local continua disponível.
+  }
+  return null;
+}
+
+async function enviarDuvida(texto) {
+  if (duvidas.ocupada) return;
+  const emDesafio = sessoes.get(9)?.fase === 'exploracao';
+  const emExercicio = [...sessoes.values()].some(({ fase }) => fase === 'exploracao' || fase === 'pratica');
+  const { tema, resposta, consultarIA } = Dominio.responderDuvida(texto, duvidas.tema, emDesafio, emExercicio);
+  duvidas.rascunho = '';
+  registrar(duvidas, texto, 'aluno');
+  let explicacao;
+  duvidas.modoIA = 'local';
+  if (consultarIA && podeConsultarGemini && !servidorSemIA) {
+    duvidas.ocupada = true;
+    exibirDuvidas(tela.retorno);
+    explicacao = await consultarDuvida(tema, texto, emExercicio);
+    duvidas.ocupada = false;
+    duvidas.modoIA = explicacao ? 'modelo' : servidorSemIA ? 'local' : 'indisponivel';
+  }
+  duvidas.tema = tema;
+  registrar(duvidas, explicacao ?? resposta);
+  if (tela.tipo === 'duvidas') exibirDuvidas(tela.retorno, false, true);
+  else salvarSessao();
+}
+
 function exibirDuvidas(retorno, focar = false, focarCaixa = false) {
   ativo = null;
   atualizarMapa();
@@ -398,14 +442,7 @@ function exibirDuvidas(retorno, focar = false, focarCaixa = false) {
   titulo.tabIndex = -1;
   cabecalho.append(titulo);
   const historico = montarHistorico(duvidas.mensagens);
-  const { formulario, caixa } = montarCompositor(duvidas, 'Escreva sua dúvida…', (texto) => {
-    const { tema, resposta } = Dominio.responderDuvida(texto, duvidas.tema, sessoes.get(9)?.fase === 'exploracao');
-    duvidas.tema = tema;
-    duvidas.rascunho = '';
-    registrar(duvidas, texto, 'aluno');
-    registrar(duvidas, resposta);
-    exibirDuvidas(retorno, false, true);
-  });
+  const { formulario, caixa } = montarCompositor(duvidas, 'Escreva sua dúvida…', enviarDuvida);
   const rodape = elemento('div', 'chat-footer');
   const acoes = elemento('div', 'chat-actions');
   acoes.append(botao(retorno?.tipo === 'chat' ? 'Voltar à prática' : 'Voltar', 'secondary', () => {
@@ -414,6 +451,16 @@ function exibirDuvidas(retorno, focar = false, focarCaixa = false) {
     else exibirObjetivos(retorno?.retorno ?? null, true);
   }));
   rodape.append(formulario, acoes);
+  if (podeConsultarGemini) {
+    const status = duvidas.ocupada ? 'Preparando a explicação…'
+      : duvidas.modoIA === 'modelo' ? 'Explicação do Gemini.'
+        : duvidas.modoIA === 'indisponivel' ? 'Explicação local. O Gemini não respondeu com uma explicação adequada.'
+          : duvidas.modoIA === 'local' ? 'Explicação local.'
+            : 'Com o Gemini ativado, o tutor pode consultar o modelo para explicar o tema.';
+    const aviso = elemento('p', 'chat-status', status);
+    aviso.setAttribute('role', 'status');
+    rodape.append(aviso);
+  }
   mostrarTela({ tipo: 'duvidas', retorno }, cabecalho, historico, rodape);
   historico.scrollTop = historico.scrollHeight;
   if (focar) moverFoco();
@@ -764,7 +811,7 @@ function montarCompositor(sessao, placeholder, aoEnviar) {
   formulario.addEventListener('submit', (evento) => {
     evento.preventDefault();
     const texto = caixa.value.trim();
-    if (texto && !sessao.ocupada) aoEnviar(texto);
+    if (texto && !sessao.ocupada) return aoEnviar(texto);
   });
   caixa.addEventListener('keydown', (evento) => {
     if (evento.key === 'Enter' && !evento.shiftKey && !evento.isComposing) {

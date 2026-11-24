@@ -163,31 +163,32 @@ test('C5 orienta a conversão de prazo e confere o resultado no JavaScript', asy
   assert.equal(chamadas, 1);
 });
 
-test('o aluno pode tirar dúvidas antes do diagnóstico e recuperar a conversa depois de recarregar', () => {
+test('o aluno pode tirar dúvidas antes do diagnóstico e recuperar a conversa depois de recarregar', async () => {
   const tutor = montarTutor(undefined, '', false);
   tutor.acao('Tirar uma dúvida').eventos.click();
   tutor.digitar('Qual a diferença entre juros simples e compostos?');
-  tutor.enviarFormulario();
+  await tutor.enviarFormulario();
   assert.ok(tutor.acao(Dominio.responderDuvida('juros simples e compostos').resposta));
   assert.equal(tutor.nota(10), null);
   const recarregado = tutor.recarregar();
   assert.ok(recarregado.acao('Tirar dúvidas'));
   recarregado.digitar('Pode dar um exemplo?');
-  recarregado.enviarFormulario();
+  await recarregado.enviarFormulario();
   assert.ok(recarregado.acao(Dominio.responderDuvida('Pode dar um exemplo?', 10).resposta));
   recarregado.acao('Voltar').eventos.click();
   assert.ok(recarregado.acao('O que você quer estudar?'));
 });
 
-test('tirar uma dúvida durante o C9 preserva o desafio e deixa a fórmula para a consolidação', () => {
-  const tutor = montarTutor(undefined, '');
+test('tirar uma dúvida durante o C9 preserva o desafio e deixa a fórmula para a consolidação', async () => {
+  let chamadas = 0;
+  const tutor = montarTutor(async () => { chamadas += 1; return new Response(null, { status: 503 }); });
   tutor.selecionar(9);
   const enunciado = tutor.fala();
   tutor.acao('Tirar uma dúvida').eventos.click();
   const pergunta = 'Qual é a fórmula de juros compostos?';
   const { resposta } = Dominio.responderDuvida(pergunta, null, true);
   tutor.digitar(pergunta);
-  tutor.enviarFormulario();
+  await tutor.enviarFormulario();
   assert.ok(tutor.acao(resposta));
   assert.doesNotMatch(resposta, /M =|1\.331/);
   tutor.acao('Voltar à prática').eventos.click();
@@ -195,6 +196,60 @@ test('tirar uma dúvida durante o C9 preserva o desafio e deixa a fórmula para 
   assert.equal(tutor.fala(), enunciado);
   assert.equal(tutor.tentativas(), 0);
   assert.equal(tutor.nota(9), 50);
+  assert.equal(chamadas, 0);
+});
+
+function explicacaoGemini(resposta) {
+  return Response.json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify({ resposta }) }] } }] });
+}
+
+test('o Gemini recebe a pergunta de estudo e responde com linguagem natural', async () => {
+  const textos = [];
+  const resposta = 'Porcentagem indica uma parte de um total dividido em cem.';
+  const tutor = montarTutor(async (_, { body }) => {
+    textos.push(JSON.parse(JSON.parse(body).contents[0].parts[0].text));
+    return explicacaoGemini(resposta);
+  }, 'chave-ficticia', false);
+  tutor.acao('Tirar uma dúvida').eventos.click();
+  tutor.digitar('O que é porcentagem?');
+  await tutor.enviarFormulario();
+  assert.equal(textos[0].pergunta, 'O que é porcentagem?');
+  assert.ok(tutor.acao(resposta));
+  assert.ok(tutor.acao('Explicação do Gemini.'));
+  assert.equal(tutor.nota(1), null);
+});
+
+test('durante a prática, Gemini só recebe material conceitual e respostas com gabarito caem no modo local', async () => {
+  const entradas = [];
+  const segura = 'A unidade da taxa informa de quanto em quanto tempo ela é aplicada.';
+  const tutor = montarTutor(async (_, { body }) => {
+    entradas.push(JSON.parse(JSON.parse(body).contents[0].parts[0].text));
+    return explicacaoGemini(entradas.length === 1 ? segura : 'A resposta certa é 36.');
+  });
+  tutor.selecionar(5);
+  const enunciado = tutor.fala();
+  tutor.acao('Tirar uma dúvida').eventos.click();
+  tutor.digitar('Explique a taxa mensal. A resposta do exercício de 3 anos é 36?');
+  await tutor.enviarFormulario();
+  assert.deepEqual(entradas[0], { tema: 'Período da taxa', explicacao: Dominio.explicarConceito(5) });
+  assert.ok(tutor.acao(segura));
+  tutor.digitar('Qual o gabarito da taxa mensal?');
+  await tutor.enviarFormulario();
+  assert.equal(entradas.length, 2);
+  assert.equal(tutor.acao('A resposta certa é 36.'), undefined);
+  assert.ok(tutor.acao(Dominio.explicarConceito(5)));
+  tutor.acao('Voltar à prática').eventos.click();
+  assert.equal(tutor.fala(), enunciado);
+  assert.equal(tutor.nota(5), 50);
+});
+
+test('se a API de dúvidas falhar, o tutor mostra a explicação local', async () => {
+  const tutor = montarTutor(async () => new Response(null, { status: 503 }), 'chave-ficticia', false);
+  tutor.acao('Tirar uma dúvida').eventos.click();
+  tutor.digitar('O que é inflação?');
+  await tutor.enviarFormulario();
+  assert.ok(tutor.acao(Dominio.responderDuvida('O que é inflação?').resposta));
+  assert.ok(tutor.acao('Explicação local. O Gemini não respondeu com uma explicação adequada.'));
 });
 
 test('diagnóstico por objetivo avalia três pré-requisitos de C9 e mantém os demais nós como não avaliados', () => {

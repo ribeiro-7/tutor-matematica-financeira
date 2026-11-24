@@ -279,7 +279,9 @@ const Dominio = (() => {
     'Compare R$ 95 hoje com R$ 110 daqui a um mês, à taxa de 10% ao mês. O valor futuro equivale a R$ 100 hoje, então R$ 95 é o menor custo presente.',
   ];
 
-  function responderDuvida(texto, anterior = null, emDesafio = false) {
+  const materialDuvida = (id) => ({ explicacao: explicarConceito(id), exemplo: exemplosDuvida[id - 1] });
+
+  function responderDuvida(texto, anterior = null, emDesafio = false, emExercicio = false) {
     const pergunta = normalizarTexto(texto);
     const exemploPedido = /exemplo|explique de novo|nao entendi|outras palavras/.test(pergunta);
     const tema = temasDuvida.find(([, termos]) => termos.test(pergunta))?.[0]
@@ -287,19 +289,20 @@ const Dominio = (() => {
     if (!tema) {
       return {
         tema: anterior,
+        consultarIA: false,
         resposta: 'Qual conceito de matemática financeira você quer entender? Pergunte, por exemplo, sobre juros compostos, porcentagem ou valor presente.',
       };
     }
     if (emDesafio && [8, 9, 10].includes(tema)) {
       return {
         tema,
+        consultarIA: false,
         resposta: 'Nos juros simples, a taxa incide sobre o capital inicial de cada vez. Nos compostos, ela incide sobre o saldo no início do período. No desafio, observe o que acontece com cada base depois do primeiro mês.',
       };
     }
-    return {
-      tema,
-      resposta: exemploPedido ? exemplosDuvida[tema - 1] : `${explicarConceito(tema)}\n\n${exemplosDuvida[tema - 1]}`,
-    };
+    const { explicacao, exemplo } = materialDuvida(tema);
+    return { tema, consultarIA: true, resposta: emExercicio ? explicacao
+      : exemploPedido ? exemplo : `${explicacao}\n\n${exemplo}` };
   }
 
   function numerosNoTexto(texto) {
@@ -347,7 +350,7 @@ const Dominio = (() => {
     return mensagem.endsWith('?') ? 'duvida' : 'ambigua';
   }
 
-  return { conceitos, diagnostico, estado, rotulos, pontuar, pendentes, sugerir, confere, lerNumero, problema, totalVariantes, sortearVariante, identificarErro, desafio, tiposChat, numerosNoTexto, interpretarLocal, explicarConceito, lerComparacao, responderDuvida };
+  return { conceitos, diagnostico, estado, rotulos, pontuar, pendentes, sugerir, confere, lerNumero, problema, totalVariantes, sortearVariante, identificarErro, desafio, tiposChat, numerosNoTexto, interpretarLocal, explicarConceito, lerComparacao, responderDuvida, materialDuvida };
 })();
 
 if (typeof module !== 'undefined') module.exports = Dominio;

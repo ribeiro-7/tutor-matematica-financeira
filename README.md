@@ -30,7 +30,7 @@ Na prática, um acerto sem dica soma 15 pontos e um acerto com dica soma 7. O pr
 
 O JavaScript compara respostas incorretas com valores de erros previstos em C5, C9 e C14. Se houver uma coincidência clara, o tutor dá uma dica específica. Quando o erro sugere uma dificuldade com um pré-requisito, o chat oferece um atalho para revisá-lo. Por exemplo, usar o número de anos como expoente com uma taxa mensal no C9 sugere revisão do C5.
 
-**Tirar dúvidas.** O botão **Tirar uma dúvida** abre uma conversa livre antes do diagnóstico ou durante a prática. Pergunte, por exemplo, “Qual a diferença entre juros simples e compostos?”. O tutor reconhece temas da trilha e responde com explicações e exemplos do conteúdo do projeto, inclusive sem chave do Gemini. A conversa de dúvidas fica na mesma sessão e não interfere nos exercícios nem na pontuação.
+**Tirar dúvidas.** O botão **Tirar uma dúvida** abre uma conversa sobre os temas da trilha. Com o Gemini, uma pergunta de estudo recebe uma explicação em linguagem natural. Durante um exercício, o modelo recebe apenas o conceito e uma definição de referência. As respostas ficam no nível conceitual, sem calcular o exercício. Na exploração do C9, a explicação sobre juros compostos preserva a fórmula para a consolidação. Sem chave ou em caso de falha, o tutor usa o conteúdo local. A conversa fica na mesma sessão e não altera a pontuação.
 
 ## Estratégia Desafios Produtivos
 
