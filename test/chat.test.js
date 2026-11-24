@@ -15,7 +15,7 @@ class Elemento {
     this.children = [];
     this.eventos = {};
     this.dataset = {};
-    this.style = {};
+    this.style = { setProperty(nome, valor) { this[nome] = valor; } };
   }
 
   append(...filhos) { this.children.push(...filhos); }
@@ -74,6 +74,7 @@ function montarTutor(consultar, chave = 'chave-ficticia', diagnosticoConcluido =
     location: { protocol: protocolo, hostname: '127.0.0.1' },
     window: {
       matchMedia: () => ({ matches: false }),
+      getComputedStyle: () => ({ getPropertyValue: () => '' }),
       addEventListener: (evento, acao) => { eventosJanela[evento] = acao; },
       history: historico,
       sessionStorage: {

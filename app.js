@@ -21,6 +21,7 @@ let avaliacao = null;
 let diagnosticado = false;
 let ativo = null;
 let tela = { tipo: 'objetivos', retorno: null };
+let efeitoXP = null;
 
 function salvarSessao() {
   const conversas = [...sessoes].map(([id, { ocupada, modoIA, ...sessao }]) => {
@@ -110,6 +111,21 @@ function botao(texto, classe, acao) {
   return no;
 }
 
+function estrelas(quantidade) {
+  const grupo = elemento('span', 'stars');
+  grupo.setAttribute('role', 'img');
+  grupo.setAttribute('aria-label', `${quantidade} de 3 estrelas`);
+  for (let i = 0; i < 3; i += 1) {
+    const estrela = elemento('span', i < quantidade ? 'star on' : 'star', '★');
+    estrela.setAttribute('aria-hidden', 'true');
+    grupo.append(estrela);
+  }
+  return grupo;
+}
+
+const estrelasDaNota = (nota) => nota >= 70 ? 3 : nota >= 50 ? 2 : nota >= 30 ? 1 : 0;
+const rotuloFase = (id) => `Fase ${String(id).padStart(2, '0')}`;
+
 function desenharLigacoes() {
   const largura = mapa.clientWidth;
   const altura = mapa.clientHeight;
@@ -117,8 +133,12 @@ function desenharLigacoes() {
   grafo.width = largura * escala;
   grafo.height = altura * escala;
   const ctx = grafo.getContext('2d');
+  if (!ctx) return;
+  const estilo = window.getComputedStyle(mapa);
+  const corBase = estilo.getPropertyValue('--edge').trim();
+  const corAtiva = estilo.getPropertyValue('--edge-active').trim();
   ctx.scale(escala, escala);
-  ctx.lineWidth = 1.25;
+  ctx.lineCap = 'round';
   for (const conceito of Dominio.conceitos) {
     const fim = nos.get(conceito.id);
     for (const requisito of conceito.requisitos) {
@@ -126,11 +146,13 @@ function desenharLigacoes() {
       const x1 = inicio.offsetLeft + inicio.offsetWidth / 2;
       const y1 = inicio.offsetTop + inicio.offsetHeight;
       const x2 = fim.offsetLeft + fim.offsetWidth / 2;
-      const y2 = fim.offsetTop - 4;
-      const destacado = ativo === conceito.id;
-      const cor = destacado ? '#34775e' : '#aabbbc';
+      const y2 = fim.offsetTop - 5;
+      const conquistado = notas[requisito] >= 70;
+      const cor = conquistado || ativo === conceito.id ? corAtiva : corBase;
       ctx.strokeStyle = cor;
       ctx.fillStyle = cor;
+      ctx.lineWidth = conquistado ? 2.25 : 1.5;
+      ctx.setLineDash(conquistado ? [] : [3, 5]);
       ctx.beginPath();
       ctx.moveTo(x1, y1);
       const linhas = conceito.linha - Dominio.conceitos[requisito - 1].linha;
@@ -147,10 +169,9 @@ function desenharLigacoes() {
         ctx.bezierCurveTo(x1, meio, x2, meio, x2, y2);
       }
       ctx.stroke();
+      ctx.setLineDash([]);
       ctx.beginPath();
-      ctx.moveTo(x2 - 3, y2 - 2);
-      ctx.lineTo(x2 + 3, y2 - 2);
-      ctx.lineTo(x2, y2 + 3);
+      ctx.arc(x2, y2, 2.5, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -158,7 +179,6 @@ function desenharLigacoes() {
 
 for (const conceito of Dominio.conceitos) {
   const no = botao('', 'node', () => selecionar(conceito.id));
-  no.append(elemento('span', 'node-id', `C${conceito.id}`), elemento('span', 'node-name', conceito.nome));
   no.style.gridColumn = conceito.coluna + 1;
   no.style.gridRow = conceito.linha + 1;
   nos.set(conceito.id, no);
@@ -168,20 +188,42 @@ new ResizeObserver(desenharLigacoes).observe(mapa);
 
 function atualizarMapa() {
   const total = notas.filter((nota) => nota >= 70).length;
+  const quantidade = Dominio.conceitos.length;
+  const xp = notas.reduce((soma, nota) => soma + (nota ?? 0), 0);
+  const proxima = diagnosticado && !avaliacao ? Dominio.sugerir(notas)?.id : null;
   const indicador = document.querySelector('#mastered');
   indicador.hidden = !diagnosticado;
-  indicador.textContent = `${total}/${Dominio.conceitos.length} dominados`;
+  indicador.textContent = `Nível ${total} · ${xp} XP`;
+  document.querySelector('#trail-progress').hidden = !diagnosticado;
+  document.querySelector('#trail-track').setAttribute('aria-valuenow', String(total));
+  document.querySelector('#trail-track').setAttribute('aria-valuemax', String(quantidade));
+  document.querySelector('#trail-fill').style.width = `${total / quantidade * 100}%`;
+  document.querySelector('#trail-count').textContent = `${total}/${quantidade}`;
   menuDiagnostico.hidden = !diagnosticado;
   menuDiagnostico.disabled = Boolean(avaliacao);
-  document.querySelector('#map-caption').textContent = avaliacao ? 'Conclua o diagnóstico para praticar no chat.'
-    : diagnosticado ? 'Selecione um conceito para praticar no chat.' : 'Escolha o que quer estudar para começar.';
+  document.querySelector('#map-caption').textContent = avaliacao ? 'Conclua o diagnóstico para liberar a trilha.'
+    : diagnosticado ? 'Escolha uma fase para praticar no chat.' : 'Escolha um objetivo para começar a trilha.';
   for (const { id, nome } of Dominio.conceitos) {
     const no = nos.get(id);
-    const estado = Dominio.estado(notas[id]);
+    const nota = notas[id];
+    const estado = Dominio.estado(nota);
+    const recomendada = proxima === id;
+    const revisar = diagnosticado && nota === null && Dominio.pendentes(id, notas).length > 0;
     no.dataset.estado = estado;
+    no.dataset.proxima = String(recomendada);
     no.disabled = !diagnosticado || Boolean(avaliacao);
     no.setAttribute('aria-pressed', String(ativo === id));
-    no.setAttribute('aria-label', `C${id}, ${nome}, ${Dominio.rotulos[estado]}${notas[id] === null ? '' : `, ${notas[id]} de 100`}`);
+    no.setAttribute('aria-label', `${rotuloFase(id)}, ${nome}, ${Dominio.rotulos[estado]}${nota === null ? '' : `, ${nota} de 100`}${recomendada ? ', próxima sugerida' : ''}${revisar ? ', pré-requisitos a avaliar ou revisar' : ''}`);
+    const topo = elemento('span', 'node-top');
+    topo.append(elemento('span', 'node-id', rotuloFase(id)));
+    if (nota !== null) topo.append(estrelas(estrelasDaNota(nota)));
+    no.replaceChildren(topo, elemento('span', 'node-name', nome));
+    if (estado === 'mastered' || revisar) {
+      const marca = estado === 'mastered' ? elemento('span', 'node-badge medal', '🏆') : elemento('span', 'node-badge lock', '🔒');
+      marca.setAttribute('aria-hidden', 'true');
+      no.append(marca);
+    }
+    if (recomendada) no.append(elemento('span', 'next-tag', 'Próxima'));
   }
   desenharLigacoes();
 }
@@ -314,7 +356,9 @@ function exibirResumo(objetivo, acertos, total, retorno) {
   topo.append(titulo);
   const corpo = elemento('div', 'summary');
   corpo.append(
+    elemento('p', 'eyebrow', 'Resultado do diagnóstico'),
     elemento('p', 'result', `${acertos} de ${total}`),
+    estrelas(total ? Math.round(acertos / total * 3) : 0),
     elemento('p', '', 'Cada acerto no diagnóstico deixa o conceito com pelo menos 50 pontos. O mapa mostra quais conceitos já foram avaliados.')
   );
   if (recomendado) corpo.append(botao(`Praticar ${recomendado.nome.toLowerCase()}`, 'primary', () => selecionar(recomendado.id)));
@@ -488,7 +532,12 @@ function encerrarPratica(sessao, id) {
 }
 
 function pontuar(id, evento) {
+  const anterior = notas[id] ?? 0;
   notas[id] = Dominio.pontuar(notas[id], evento);
+  const variacao = (notas[id] ?? 0) - anterior;
+  if (ativo === id && variacao) {
+    efeitoXP = { id, variacao, dominou: anterior < 70 && notas[id] >= 70 };
+  }
   atualizarMapa();
 }
 
@@ -649,7 +698,7 @@ function exibirChat(focar = false, focarCaixa = false) {
   const nomes = elemento('div');
   const titulo = elemento('h2', '', 'Tutor de matemática');
   titulo.tabIndex = -1;
-  nomes.append(titulo, elemento('p', '', `C${ativo} · ${conceito.nome}`));
+  nomes.append(titulo, elemento('p', '', `${rotuloFase(ativo)} · ${conceito.nome}`));
   heading.append(nomes);
   if (ativo === 9 && sessao.fase === 'exploracao') {
     heading.append(elemento('span', 'pill', 'Desafio produtivo'));
@@ -657,7 +706,7 @@ function exibirChat(focar = false, focarCaixa = false) {
     heading.append(elemento('span', 'pill', 'Consolidação'));
   }
   const faixa = elemento('div', 'score');
-  faixa.append(elemento('span', '', 'Domínio'));
+  faixa.append(elemento('span', '', 'XP da fase'));
   if (notas[ativo] === null) {
     faixa.append(elemento('strong', '', 'Não avaliado'));
   } else {
@@ -665,8 +714,31 @@ function exibirChat(focar = false, focarCaixa = false) {
     indicador.max = 100;
     indicador.value = notas[ativo];
     indicador.setAttribute('aria-label', 'Domínio no conceito');
-    faixa.append(indicador, elemento('strong', '', `${notas[ativo]}/100`));
+    faixa.append(indicador, elemento('strong', '', `${notas[ativo]}/100`), estrelas(estrelasDaNota(notas[ativo])));
   }
+  const conteudo = [heading, faixa];
+  if (efeitoXP?.id === ativo) {
+    const { variacao, dominou } = efeitoXP;
+    const ganho = elemento('span', variacao > 0 ? 'xp-gain' : 'xp-gain loss', `${variacao > 0 ? '+' : ''}${variacao} XP`);
+    ganho.setAttribute('aria-hidden', 'true');
+    faixa.append(ganho);
+    if (dominou) {
+      const festa = elemento('div', 'level-up');
+      const medalha = elemento('span', 'level-medal', '🏆');
+      const particulas = elemento('span', 'burst');
+      festa.setAttribute('role', 'status');
+      medalha.setAttribute('aria-hidden', 'true');
+      particulas.setAttribute('aria-hidden', 'true');
+      for (let i = 0; i < 8; i += 1) {
+        const particula = elemento('i');
+        particula.style.setProperty('--i', i);
+        particulas.append(particula);
+      }
+      festa.append(medalha, elemento('span', '', 'Fase concluída! Você ganhou 3 estrelas.'), particulas);
+      conteudo.push(festa);
+    }
+  }
+  efeitoXP = null;
   const historico = elemento('div', 'history');
   historico.tabIndex = 0;
   historico.setAttribute('role', 'log');
@@ -759,7 +831,7 @@ function exibirChat(focar = false, focarCaixa = false) {
     aviso.setAttribute('role', 'status');
     rodape.append(aviso);
   }
-  mostrarTela({ tipo: 'chat' }, heading, faixa, historico, rodape);
+  mostrarTela({ tipo: 'chat' }, ...conteudo, historico, rodape);
   historico.scrollTop = historico.scrollHeight;
   if (focar) moverFoco();
   if (focarCaixa) (caixa || acoes.querySelector('button'))?.focus({ preventScroll: true });

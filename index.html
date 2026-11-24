@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Tutor de matemática financeira com diagnóstico, mapa de conceitos e prática guiada.">
   <title>Juros em Jogo | Matemática Financeira</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
   <link rel="stylesheet" href="styles.css">
   <script src="dominio.js" defer></script>
   <script src="app.js" defer></script>
@@ -27,13 +30,20 @@
     <div class="workspace">
       <section class="panel map-panel" aria-labelledby="map-title">
         <div class="panel-heading">
-          <div><h2 id="map-title">Mapa de conceitos</h2><p id="map-caption">Escolha o que quer estudar para começar.</p></div>
+          <div><h2 id="map-title">Trilha de fases</h2><p id="map-caption">Escolha um objetivo para começar a trilha.</p></div>
           <div class="map-actions">
             <span id="mastered" class="pill" hidden></span>
             <button id="diagnostic-menu" type="button" class="secondary small" hidden>Diagnóstico</button>
           </div>
         </div>
-        <div class="map-scroll" tabindex="0" role="region" aria-label="Mapa rolável de conceitos">
+        <div class="level-bar" id="trail-progress" hidden>
+          <span class="level-label">Progresso da trilha</span>
+          <span class="level-track" id="trail-track" role="progressbar" aria-label="Fases concluídas" aria-valuemin="0" aria-valuemax="14">
+            <span class="level-fill" id="trail-fill"></span>
+          </span>
+          <span class="level-count" id="trail-count"></span>
+        </div>
+        <div class="map-scroll" tabindex="0" role="region" aria-label="Trilha de fases rolável">
           <div class="map" id="map">
             <canvas id="edges" aria-hidden="true"></canvas>
           </div>
@@ -43,6 +53,7 @@
           <li><span class="dot initial"></span>Iniciante</li>
           <li><span class="dot progressing"></span>Em progresso</li>
           <li><span class="dot mastered"></span>Dominado</li>
+          <li><span class="stars" aria-hidden="true"><span class="star on">★★★</span></span>30 · 50 · 70 XP</li>
         </ul>
       </section>
       <section class="panel activity-panel" id="activity" aria-label="Área de estudo"></section>
