@@ -398,32 +398,37 @@ async function consultarDuvida(tema, texto, emExercicio) {
       signal: AbortSignal.timeout(7500),
       body: JSON.stringify(dados),
     });
-    if (resultado.status === 204) servidorSemIA = true;
+    if (resultado.status === 204) {
+      servidorSemIA = true;
+      return { modo: 'local' };
+    }
     if (resultado.status === 200) {
       const { resposta } = await resultado.json();
-      if (typeof resposta === 'string' && resposta.trim()) return resposta;
+      return typeof resposta === 'string' && resposta.trim() ? { modo: 'modelo', resposta } : { modo: 'resposta-invalida' };
     }
+    if (resultado.status === 502 && (await resultado.json()).motivo === 'resposta-invalida') return { modo: 'resposta-invalida' };
   } catch {
     // A explicação local continua disponível.
   }
-  return null;
+  return { modo: 'indisponivel' };
 }
 
 async function enviarDuvida(texto) {
   if (duvidas.ocupada) return;
   const emDesafio = sessoes.get(9)?.fase === 'exploracao';
   const emExercicio = [...sessoes.values()].some(({ fase }) => fase === 'exploracao' || fase === 'pratica');
-  const { tema, resposta, consultarIA } = Dominio.responderDuvida(texto, duvidas.tema, emDesafio, emExercicio);
+  const { tema, resposta, consultarIA, pedirTema } = Dominio.responderDuvida(texto, duvidas.tema, emDesafio, emExercicio);
   duvidas.rascunho = '';
   registrar(duvidas, texto, 'aluno');
   let explicacao;
-  duvidas.modoIA = 'local';
+  duvidas.modoIA = pedirTema ? 'tema' : 'local';
   if (consultarIA && podeConsultarGemini && !servidorSemIA) {
     duvidas.ocupada = true;
     exibirDuvidas(tela.retorno);
-    explicacao = await consultarDuvida(tema, texto, emExercicio);
+    const resultado = await consultarDuvida(tema, texto, emExercicio);
+    explicacao = resultado.resposta;
     duvidas.ocupada = false;
-    duvidas.modoIA = explicacao ? 'modelo' : servidorSemIA ? 'local' : 'indisponivel';
+    duvidas.modoIA = resultado.modo;
   }
   duvidas.tema = tema;
   registrar(duvidas, explicacao ?? resposta);
@@ -454,9 +459,11 @@ function exibirDuvidas(retorno, focar = false, focarCaixa = false) {
   if (podeConsultarGemini) {
     const status = duvidas.ocupada ? 'Preparando a explicação…'
       : duvidas.modoIA === 'modelo' ? 'Explicação do Gemini.'
-        : duvidas.modoIA === 'indisponivel' ? 'Explicação local. O Gemini não respondeu com uma explicação adequada.'
-          : duvidas.modoIA === 'local' ? 'Explicação local.'
-            : 'Com o Gemini ativado, o tutor pode consultar o modelo para explicar o tema.';
+        : duvidas.modoIA === 'indisponivel' ? 'Explicação local. A consulta ao Gemini falhou.'
+          : duvidas.modoIA === 'resposta-invalida' ? 'Explicação local. A resposta do Gemini foi descartada.'
+            : duvidas.modoIA === 'tema' ? 'Identifique o assunto para que o tutor possa responder.'
+              : duvidas.modoIA === 'local' ? 'Explicação local.'
+                : 'Com o Gemini ativado, o tutor pode consultar o modelo para explicar o tema.';
     const aviso = elemento('p', 'chat-status', status);
     aviso.setAttribute('role', 'status');
     rodape.append(aviso);

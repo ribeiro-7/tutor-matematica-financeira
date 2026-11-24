@@ -228,11 +228,11 @@ const Dominio = (() => {
   const tiposChat = (id) => id === 9 ? tiposC9 : tiposComuns;
 
   const explicacoes = [
-    'Porcentagem é uma razão por cem. Primeiro identifique qual quantidade representa o total.',
+    'Porcentagem é uma razão por cem. Para calcular uma porcentagem de um número, divida a porcentagem por cem e multiplique o resultado pelo número.',
     'Potenciação repete uma multiplicação. A base indica o fator e o expoente diz quantas vezes ele aparece.',
     'Acréscimos e descontos são calculados sobre um preço de referência. Identifique o preço original antes de aplicar a taxa.',
     'O capital é o valor inicial. Os juros são o que se acrescenta a ele. O montante é a soma do capital com os juros.',
-    'O período da taxa indica de quanto em quanto tempo ela é aplicada. Se a taxa é mensal, conte meses no prazo. Um ano tem 12 meses.',
+    'O período da taxa indica de quanto em quanto tempo ela é aplicada. Escreva o prazo na mesma unidade da taxa. Se a taxa é mensal e o prazo está em anos, multiplique os anos por 12 para contar os períodos mensais.',
     'Em juros simples, cada período acrescenta a mesma fração do capital inicial.',
     'O montante em juros simples inclui o capital inicial e os juros de todos os períodos.',
     'Em juros compostos, o saldo de um período inclui os juros já ganhos. Esse saldo vira a base do período seguinte.',
@@ -251,7 +251,7 @@ const Dominio = (() => {
     [11, /taxas? equivalentes?|equivalencia de taxas?|taxa.{0,12}mensal.{0,20}anual|taxa.{0,12}anual.{0,20}mensal/],
     [14, /a vista|qual.{0,20}compensa|qual.{0,20}mais barato/],
     [12, /parcela|valor presente/],
-    [5, /periodo da taxa|anos para meses|meses para anos|converter.{0,25}taxa/],
+    [5, /\bperiodos?\b.*\btaxas?\b|\btaxas?\b.*\bperiodos?\b|anos para meses|meses para anos|converter.{0,25}taxa|quantas vezes.{0,25}taxa/],
     [9, /juros compostos|capitalizacao|montante composto/],
     [5, /taxa mensal|taxa anual/],
     [8, /juros sobre juros|saldo atualizado/],
@@ -290,6 +290,7 @@ const Dominio = (() => {
       return {
         tema: anterior,
         consultarIA: false,
+        pedirTema: true,
         resposta: 'Qual conceito de matemática financeira você quer entender? Pergunte, por exemplo, sobre juros compostos, porcentagem ou valor presente.',
       };
     }

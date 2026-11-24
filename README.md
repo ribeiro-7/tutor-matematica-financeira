@@ -16,7 +16,7 @@ Com Node.js 22 ou superior, execute na pasta do projeto:
 node servidor.js
 ```
 
-Abra [http://127.0.0.1:3000](http://127.0.0.1:3000). Nos 14 chats, o Gemini classifica mensagens em texto livre e pode selecionar um trecho do que o estudante escreveu para retomar a dúvida ou a tentativa. O JavaScript valida o trecho, escolhe as dicas, confere o gabarito e atualiza a pontuação. Se faltar a chave, a consulta falhar ou o trecho for inválido, o tutor continua com a orientação local.
+Abra [http://127.0.0.1:3000](http://127.0.0.1:3000). O servidor usa o Gemini 3.5 Flash-Lite. Nos 14 chats, o modelo classifica mensagens em texto livre e pode selecionar um trecho do que o estudante escreveu para retomar a dúvida ou a tentativa. O JavaScript valida o trecho, escolhe as dicas, confere o gabarito e atualiza a pontuação. Se faltar a chave, a consulta falhar ou o trecho for inválido, o tutor continua com a orientação local.
 
 **Progresso da sessão.** O navegador guarda o diagnóstico, as notas, as conversas, o exercício atual e o sorteio. Ao apertar F5 na mesma aba, você volta ao ponto em que parou. Se uma consulta ao Gemini estiver em andamento, a mensagem volta como rascunho para você reenviar. Para iniciar outra sessão, abra o tutor em uma aba nova.
 

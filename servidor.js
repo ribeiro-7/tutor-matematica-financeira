@@ -3,9 +3,11 @@
 const { createServer } = require('node:http');
 const { readFile } = require('node:fs/promises');
 const { join } = require('node:path');
+const { setTimeout: esperar } = require('node:timers/promises');
 const { conceitos, desafio, tiposChat, materialDuvida } = require('./dominio.js');
 
-const modelo = 'gemini-3.1-flash-lite';
+const modelo = 'gemini-3.5-flash-lite';
+class RespostaInvalidaGemini extends Error {}
 const aberturas = new Map([
   ['duvida', 'Você trouxe a dúvida'],
   ['raciocinio', 'Você explicou sua ideia ao escrever'],
@@ -84,13 +86,22 @@ async function consultarGemini(dados, instrucao, esquema, chave, consultar = fet
       },
     }),
   };
-  const resposta = await consultar(url, opcoes);
+  let resposta = await consultar(url, opcoes);
+  if (resposta.status === 503) {
+    await resposta.body?.cancel();
+    await esperar(500, undefined, { signal: opcoes.signal });
+    resposta = await consultar(url, opcoes);
+  }
   if (!resposta.ok) throw new Error('Falha na consulta ao Gemini');
-  const resultado = await resposta.json();
-  const candidato = resultado.candidates?.[0];
-  if (candidato?.finishReason !== 'STOP') throw new Error('Resposta incompleta do Gemini');
+  const resultado = await resposta.json().catch(() => null);
+  const candidato = resultado?.candidates?.[0];
+  if (candidato?.finishReason !== 'STOP') throw new RespostaInvalidaGemini('Resposta incompleta do Gemini');
   const saida = candidato.content?.parts?.filter((parte) => !parte.thought).map((parte) => parte.text).join('');
-  return saida ? JSON.parse(saida) : null;
+  try {
+    return saida ? JSON.parse(saida) : null;
+  } catch {
+    throw new RespostaInvalidaGemini('Resposta do Gemini fora do formato');
+  }
 }
 
 async function interpretarMensagem(dados, chave, consultar) {
@@ -124,7 +135,7 @@ async function explicarDuvida({ id, emExercicio, pergunta }, chave, consultar) {
   const resposta = typeof retorno?.resposta === 'string' ? retorno.resposta.trim() : '';
   if (!resposta || resposta.length > 650 || /[<>]/.test(resposta)
     || (emExercicio && /[\p{N}=%×÷^+*/$]|\b(?:gabarito|resposta\s+(?:certa|correta|é)|conta\s+[ab]|alternativa\s+[ab])\b/iu.test(resposta))) {
-    throw new Error('Explicação inválida');
+    throw new RespostaInvalidaGemini('Explicação inválida');
   }
   return { resposta };
 }
@@ -199,8 +210,10 @@ function criarServidor(chave, consultar) {
         const devolutiva = await responder(dados, chave, consultar);
         res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
           .end(JSON.stringify(devolutiva));
-      } catch {
-        res.writeHead(502, { 'Cache-Control': 'no-store' }).end();
+      } catch (erro) {
+        const motivo = erro instanceof RespostaInvalidaGemini ? 'resposta-invalida' : 'indisponivel';
+        res.writeHead(502, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+          .end(JSON.stringify({ motivo }));
       }
       return;
     }

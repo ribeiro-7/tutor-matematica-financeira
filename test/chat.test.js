@@ -132,7 +132,7 @@ function montarTutor(consultar, chave = 'chave-ficticia', diagnosticoConcluido =
 
 function geminiSimulado(classificar) {
   return async (url, { headers, body }) => {
-    assert.match(url, /gemini-3\.1-flash-lite:generateContent$/);
+    assert.match(url, /gemini-3\.5-flash-lite:generateContent$/);
     assert.equal(headers['x-goog-api-key'], 'chave-ficticia');
     const requisicao = JSON.parse(body);
     const dados = JSON.parse(requisicao.contents[0].parts[0].text);
@@ -229,7 +229,7 @@ test('durante a prática, Gemini só recebe material conceitual e respostas com 
   tutor.selecionar(5);
   const enunciado = tutor.fala();
   tutor.acao('Tirar uma dúvida').eventos.click();
-  tutor.digitar('Explique a taxa mensal. A resposta do exercício de 3 anos é 36?');
+  tutor.digitar('Como eu posso calcular os períodos que eu devo usar nas taxas ?');
   await tutor.enviarFormulario();
   assert.deepEqual(entradas[0], { tema: 'Período da taxa', explicacao: Dominio.explicarConceito(5) });
   assert.ok(tutor.acao(segura));
@@ -237,10 +237,24 @@ test('durante a prática, Gemini só recebe material conceitual e respostas com 
   await tutor.enviarFormulario();
   assert.equal(entradas.length, 2);
   assert.equal(tutor.acao('A resposta certa é 36.'), undefined);
+  assert.ok(tutor.acao('Explicação local. A resposta do Gemini foi descartada.'));
   assert.ok(tutor.acao(Dominio.explicarConceito(5)));
   tutor.acao('Voltar à prática').eventos.click();
   assert.equal(tutor.fala(), enunciado);
   assert.equal(tutor.nota(5), 50);
+});
+
+test('dúvidas sobre períodos e taxas reconhecem C5 com ou sem Gemini', async () => {
+  const frase = 'Como eu posso calcular os períodos que eu devo usar nas taxas ?';
+  assert.equal(Dominio.responderDuvida(frase).tema, 5);
+  assert.equal(Dominio.responderDuvida('Como sei quantos períodos usar se já tenho a taxa?').tema, 5);
+  assert.equal(Dominio.responderDuvida('Qual a diferença entre taxa mensal e anual em taxas equivalentes?').tema, 11);
+  const tutor = montarTutor(undefined, '', false);
+  tutor.acao('Tirar uma dúvida').eventos.click();
+  tutor.digitar(frase);
+  await tutor.enviarFormulario();
+  assert.ok(tutor.acao(Dominio.responderDuvida(frase).resposta));
+  assert.ok(tutor.acao('Explicação local.'));
 });
 
 test('se a API de dúvidas falhar, o tutor mostra a explicação local', async () => {
@@ -249,7 +263,22 @@ test('se a API de dúvidas falhar, o tutor mostra a explicação local', async (
   tutor.digitar('O que é inflação?');
   await tutor.enviarFormulario();
   assert.ok(tutor.acao(Dominio.responderDuvida('O que é inflação?').resposta));
-  assert.ok(tutor.acao('Explicação local. O Gemini não respondeu com uma explicação adequada.'));
+  assert.ok(tutor.acao('Explicação local. A consulta ao Gemini falhou.'));
+});
+
+test('uma indisponibilidade temporária tenta consultar o Gemini mais uma vez', async () => {
+  let chamadas = 0;
+  const explicacao = 'Divida a porcentagem por cem e multiplique pelo valor total.';
+  const tutor = montarTutor(async () => {
+    chamadas += 1;
+    return chamadas === 1 ? new Response(null, { status: 503 }) : explicacaoGemini(explicacao);
+  }, 'chave-ficticia', false);
+  tutor.acao('Tirar uma dúvida').eventos.click();
+  tutor.digitar('Como calcular uma porcentagem?');
+  await tutor.enviarFormulario();
+  assert.equal(chamadas, 2);
+  assert.ok(tutor.acao(explicacao));
+  assert.ok(tutor.acao('Explicação do Gemini.'));
 });
 
 test('diagnóstico por objetivo avalia três pré-requisitos de C9 e mantém os demais nós como não avaliados', () => {
