@@ -9,6 +9,7 @@ const chaveSessao = 'juros-em-jogo:sessao:v1';
 const notas = Array(Dominio.conceitos.length + 1).fill(null);
 const respostasDiagnostico = new Map();
 const sessoes = new Map();
+let duvidas = { mensagens: [], tema: null, rascunho: '' };
 const nos = new Map();
 const podeConsultarGemini = location.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(location.hostname);
 const objetivos = [
@@ -33,7 +34,7 @@ function salvarSessao() {
     return [id, sessao];
   });
   const dados = JSON.stringify({
-    notas, ativo, tela, diagnosticado, conversas,
+    notas, ativo, tela, diagnosticado, conversas, duvidas,
     respostas: [...respostasDiagnostico],
     avaliacao: avaliacao && { ...avaliacao, escolhas: [...avaliacao.escolhas] },
   });
@@ -77,6 +78,7 @@ function restaurarSessao() {
     if (Dominio.conceitos[id - 1] && Array.isArray(sessao?.mensagens)) sessoes.set(id, sessao);
   }
   for (const [id, acertou] of respostas) respostasDiagnostico.set(id, acertou);
+  if (Array.isArray(dados.duvidas?.mensagens)) duvidas = dados.duvidas;
   diagnosticado = dados.diagnosticado === true;
   avaliacao = diagnosticoEmAndamento ?? null;
   if (dados.tela?.tipo === 'chat' && diagnosticado && sessoes.has(dados.ativo)) {
@@ -84,6 +86,8 @@ function restaurarSessao() {
     tela = { tipo: 'chat' };
   } else if (avaliacao) {
     tela = { tipo: 'diagnostico' };
+  } else if (dados.tela?.tipo === 'duvidas') {
+    tela = dados.tela;
   } else if (dados.tela?.tipo === 'resumo' && diagnosticado) {
     tela = dados.tela;
   } else if (dados.tela?.tipo === 'objetivos') {
@@ -258,6 +262,7 @@ function exibirObjetivos(retorno = null, focar = false) {
   if (restantes === 0) rotulo = 'Ver resultado do diagnóstico completo';
   else if (restantes < total) rotulo = `Completar diagnóstico · ${restantes} ${restantes === 1 ? 'questão restante' : 'questões restantes'}`;
   corpo.append(botao(rotulo, 'secondary', () => iniciarDiagnostico(null, retorno)));
+  corpo.append(botao('Tirar uma dúvida', 'secondary', abrirDuvidas));
   if (retorno !== null) corpo.append(botao('Voltar ao chat', 'text-button', () => selecionar(retorno)));
   mostrarTela({ tipo: 'objetivos', retorno }, cabecalho, corpo);
   if (focar) moverFoco();
@@ -368,12 +373,51 @@ function exibirResumo(objetivo, acertos, total, retorno) {
   if (retorno !== null && retorno !== recomendado?.id) {
     corpo.append(botao('Voltar ao chat', 'text-button', () => selecionar(retorno)));
   }
+  corpo.append(botao('Tirar uma dúvida', 'secondary', abrirDuvidas));
   mostrarTela({ tipo: 'resumo', objetivo, acertos, total, retorno }, topo, corpo);
   moverFoco();
 }
 
 function registrar(sessao, texto, autor = 'tutor') {
   sessao.mensagens.push({ autor, texto });
+}
+
+function abrirDuvidas() {
+  const retorno = tela.tipo === 'chat' ? { tipo: 'chat', id: ativo } : tela;
+  exibirDuvidas(retorno, true);
+}
+
+function exibirDuvidas(retorno, focar = false, focarCaixa = false) {
+  ativo = null;
+  atualizarMapa();
+  if (!duvidas.mensagens.length) {
+    registrar(duvidas, 'Sobre o que você tem dúvida? Você pode perguntar, por exemplo, o que são juros compostos ou como comparar parcelas com um pagamento à vista.');
+  }
+  const cabecalho = elemento('div', 'panel-heading');
+  const titulo = elemento('h2', '', 'Tirar dúvidas');
+  titulo.tabIndex = -1;
+  cabecalho.append(titulo);
+  const historico = montarHistorico(duvidas.mensagens);
+  const { formulario, caixa } = montarCompositor(duvidas, 'Escreva sua dúvida…', (texto) => {
+    const { tema, resposta } = Dominio.responderDuvida(texto, duvidas.tema, sessoes.get(9)?.fase === 'exploracao');
+    duvidas.tema = tema;
+    duvidas.rascunho = '';
+    registrar(duvidas, texto, 'aluno');
+    registrar(duvidas, resposta);
+    exibirDuvidas(retorno, false, true);
+  });
+  const rodape = elemento('div', 'chat-footer');
+  const acoes = elemento('div', 'chat-actions');
+  acoes.append(botao(retorno?.tipo === 'chat' ? 'Voltar à prática' : 'Voltar', 'secondary', () => {
+    if (retorno?.tipo === 'chat' && sessoes.has(retorno.id)) selecionar(retorno.id);
+    else if (retorno?.tipo === 'resumo') exibirResumo(retorno.objetivo, retorno.acertos, retorno.total, retorno.retorno);
+    else exibirObjetivos(retorno?.retorno ?? null, true);
+  }));
+  rodape.append(formulario, acoes);
+  mostrarTela({ tipo: 'duvidas', retorno }, cabecalho, historico, rodape);
+  historico.scrollTop = historico.scrollHeight;
+  if (focar) moverFoco();
+  if (focarCaixa) caixa.focus({ preventScroll: true });
 }
 
 function selecionar(id) {
@@ -691,6 +735,47 @@ async function enviarMensagem(sessao, texto, id) {
   else salvarSessao();
 }
 
+function montarHistorico(mensagens) {
+  const historico = elemento('div', 'history');
+  historico.tabIndex = 0;
+  historico.setAttribute('role', 'log');
+  historico.setAttribute('aria-label', 'Conversa com o tutor');
+  for (const { autor, texto } of mensagens) {
+    const mensagem = elemento('div', `message ${autor}`);
+    mensagem.append(elemento('span', 'message-author', autor === 'tutor' ? 'Tutor' : 'Você'), elemento('p', '', texto));
+    historico.append(mensagem);
+  }
+  return historico;
+}
+
+function montarCompositor(sessao, placeholder, aoEnviar) {
+  const formulario = elemento('form', 'composer');
+  const caixa = elemento('textarea', 'composer-input');
+  caixa.rows = 2;
+  caixa.maxLength = 600;
+  caixa.required = true;
+  caixa.value = sessao.rascunho || '';
+  caixa.placeholder = placeholder;
+  caixa.setAttribute('aria-label', placeholder);
+  caixa.addEventListener('input', () => { sessao.rascunho = caixa.value; });
+  const enviar = elemento('button', 'primary', 'Enviar');
+  enviar.type = 'submit';
+  formulario.append(caixa, enviar);
+  formulario.addEventListener('submit', (evento) => {
+    evento.preventDefault();
+    const texto = caixa.value.trim();
+    if (texto && !sessao.ocupada) aoEnviar(texto);
+  });
+  caixa.addEventListener('keydown', (evento) => {
+    if (evento.key === 'Enter' && !evento.shiftKey && !evento.isComposing) {
+      evento.preventDefault();
+      formulario.requestSubmit();
+    }
+  });
+  caixa.disabled = enviar.disabled = Boolean(sessao.ocupada);
+  return { formulario, caixa };
+}
+
 function exibirChat(focar = false, focarCaixa = false) {
   const conceito = Dominio.conceitos[ativo - 1];
   const sessao = sessoes.get(ativo);
@@ -739,15 +824,7 @@ function exibirChat(focar = false, focarCaixa = false) {
     }
   }
   efeitoXP = null;
-  const historico = elemento('div', 'history');
-  historico.tabIndex = 0;
-  historico.setAttribute('role', 'log');
-  historico.setAttribute('aria-label', 'Conversa com o tutor');
-  for (const { autor, texto } of sessao.mensagens) {
-    const mensagem = elemento('div', `message ${autor}`);
-    mensagem.append(elemento('span', 'message-author', autor === 'tutor' ? 'Tutor' : 'Você'), elemento('p', '', texto));
-    historico.append(mensagem);
-  }
+  const historico = montarHistorico(sessao.mensagens);
   const rodape = elemento('div', 'chat-footer');
   const acoes = elemento('div', 'chat-actions');
   const refresh = (acao) => () => {
@@ -756,32 +833,12 @@ function exibirChat(focar = false, focarCaixa = false) {
   };
   let caixa;
   if (sessao.fase === 'exploracao' || sessao.fase === 'pratica') {
-    const formulario = elemento('form', 'composer');
-    caixa = elemento('textarea', 'composer-input');
-    caixa.rows = 2;
-    caixa.maxLength = 600;
-    caixa.required = true;
-    caixa.value = sessao.rascunho || '';
-    caixa.addEventListener('input', () => { sessao.rascunho = caixa.value; });
-    caixa.placeholder = sessao.fase === 'exploracao' ? 'Conte como você pensou…'
+    const placeholder = sessao.fase === 'exploracao' ? 'Conte como você pensou…'
       : sessao.problema.formato === 'comparacao' ? 'Escolha A ou B e explique…' : 'Digite sua resposta…';
-    caixa.setAttribute('aria-label', caixa.placeholder);
-    const enviar = elemento('button', 'primary', 'Enviar');
-    enviar.type = 'submit';
-    formulario.append(caixa, enviar);
-    formulario.addEventListener('submit', (evento) => {
-      evento.preventDefault();
-      const texto = caixa.value.trim();
-      if (!texto) return;
+    const compositor = montarCompositor(sessao, placeholder, (texto) => {
       void enviarMensagem(sessao, texto, conceito.id);
     });
-    caixa.addEventListener('keydown', (evento) => {
-      if (evento.key === 'Enter' && !evento.shiftKey && !evento.isComposing) {
-        evento.preventDefault();
-        formulario.requestSubmit();
-      }
-    });
-    caixa.disabled = enviar.disabled = Boolean(sessao.ocupada);
+    caixa = compositor.caixa;
     const ajuda = botao('Pedir ajuda', 'secondary small', refresh(() => pedirDica(sessao)));
     ajuda.disabled = sessao.ocupada || (sessao.fase === 'exploracao' ? sessao.dicaDesafio : sessao.ajuda);
     const emDesafio = sessao.fase === 'exploracao';
@@ -795,7 +852,7 @@ function exibirChat(focar = false, focarCaixa = false) {
     }));
     resolver.disabled = Boolean(sessao.ocupada);
     acoes.append(ajuda, resolver);
-    rodape.append(formulario, acoes);
+    rodape.append(compositor.formulario, acoes);
   } else if (sessao.fase === 'revisao') {
     const pendentes = Dominio.pendentes(conceito.id, notas);
     const primeiroAvaliado = pendentes.find((id) => notas[id] !== null);
@@ -820,6 +877,7 @@ function exibirChat(focar = false, focarCaixa = false) {
     const { id, nome } = Dominio.conceitos[sessao.revisaoSugerida - 1];
     acoes.append(botao(`Revisar C${id} · ${nome}`, 'secondary', () => selecionar(id)));
   }
+  acoes.append(botao('Tirar uma dúvida', 'secondary small', abrirDuvidas));
   if (!rodape.hasChildNodes()) rodape.append(acoes);
   if (podeConsultarGemini) {
     const status = sessao.ocupada ? 'Interpretando sua mensagem…'
@@ -841,6 +899,8 @@ restaurarSessao();
 window.addEventListener('pagehide', salvarSessao);
 if (tela.tipo === 'objetivos') {
   exibirObjetivos(tela.retorno);
+} else if (tela.tipo === 'duvidas') {
+  exibirDuvidas(tela.retorno);
 } else {
   atualizarMapa();
   if (tela.tipo === 'chat') exibirChat();

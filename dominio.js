@@ -245,6 +245,63 @@ const Dominio = (() => {
   ];
   const explicarConceito = (id) => explicacoes[id - 1];
 
+  const temasDuvida = [
+    [10, /simples.{0,25}compostos|compostos.{0,25}simples|compar.{0,25}regimes/],
+    [13, /inflacao|juro[s]? rea(?:l|is)|poder de compra/],
+    [11, /taxas? equivalentes?|equivalencia de taxas?|taxa.{0,12}mensal.{0,20}anual|taxa.{0,12}anual.{0,20}mensal/],
+    [14, /a vista|qual.{0,20}compensa|qual.{0,20}mais barato/],
+    [12, /parcela|valor presente/],
+    [5, /periodo da taxa|anos para meses|meses para anos|converter.{0,25}taxa/],
+    [9, /juros compostos|capitalizacao|montante composto/],
+    [5, /taxa mensal|taxa anual/],
+    [8, /juros sobre juros|saldo atualizado/],
+    [7, /montante.{0,22}simples|saldo final.{0,22}simples/],
+    [6, /juros simples/],
+    [3, /acrescimo|desconto/],
+    [2, /potencia|expoente|elevado|fator de crescimento/],
+    [1, /porcent|percentual|razao/],
+    [4, /capital|montante|saldo|\bjuros\b/],
+  ];
+  const exemplosDuvida = [
+    'Calcule 20% de R$ 150 multiplicando 150 por 0,20. O resultado é R$ 30.',
+    'Em 1,05³, o fator 1,05 aparece três vezes. Ele representa um crescimento de 5% a cada uma das três etapas.',
+    'Um desconto de 25% em R$ 80 retira R$ 20 do preço. O valor final é R$ 60.',
+    'Se você começa com R$ 300 e ganha R$ 24 de juros, o capital é R$ 300 e o montante é R$ 324.',
+    'Se a taxa é mensal e o prazo é de dois anos, use 24 períodos. A unidade da taxa determina como contar o prazo.',
+    'Em R$ 200 a 10% ao mês, os juros simples são R$ 20 em cada mês. Depois de dois meses, são R$ 40 de juros.',
+    'Se R$ 200 renderam R$ 40 em juros simples, some o capital aos juros para obter o montante de R$ 240.',
+    'Em R$ 200 a 10% ao mês, o primeiro mês rende R$ 20. No segundo, a taxa incide sobre R$ 220 e rende R$ 22.',
+    'Se R$ 200 rendem 10% ao mês, o saldo passa para R$ 220 e depois para R$ 242. Na fórmula M = C × (1 + i)ᵗ, C é o capital, i é a taxa em decimal e t é o número de períodos.',
+    'Com R$ 200 a 10% ao mês por dois meses, os juros simples geram R$ 40 de juros. Os compostos geram R$ 42 porque a segunda taxa incide sobre R$ 220.',
+    'Em juros compostos, 10% ao mês equivale a 21% em dois meses. Multiplique 1,10 por 1,10 e retire a parte que representa o capital.',
+    'Uma parcela de R$ 110 daqui a um mês vale R$ 100 hoje se a taxa de desconto for 10% ao mês. Divida R$ 110 por 1,10.',
+    'Se o saldo cresce 10% e os preços também sobem 10%, o poder de compra fica igual. O juro real é 0%.',
+    'Compare R$ 95 hoje com R$ 110 daqui a um mês, à taxa de 10% ao mês. O valor futuro equivale a R$ 100 hoje, então R$ 95 é o menor custo presente.',
+  ];
+
+  function responderDuvida(texto, anterior = null, emDesafio = false) {
+    const pergunta = normalizarTexto(texto);
+    const exemploPedido = /exemplo|explique de novo|nao entendi|outras palavras/.test(pergunta);
+    const tema = temasDuvida.find(([, termos]) => termos.test(pergunta))?.[0]
+      ?? (exemploPedido || /formula|como calcul/.test(pergunta) ? anterior : null);
+    if (!tema) {
+      return {
+        tema: anterior,
+        resposta: 'Qual conceito de matemática financeira você quer entender? Pergunte, por exemplo, sobre juros compostos, porcentagem ou valor presente.',
+      };
+    }
+    if (emDesafio && [8, 9, 10].includes(tema)) {
+      return {
+        tema,
+        resposta: 'Nos juros simples, a taxa incide sobre o capital inicial de cada vez. Nos compostos, ela incide sobre o saldo no início do período. No desafio, observe o que acontece com cada base depois do primeiro mês.',
+      };
+    }
+    return {
+      tema,
+      resposta: exemploPedido ? exemplosDuvida[tema - 1] : `${explicarConceito(tema)}\n\n${exemplosDuvida[tema - 1]}`,
+    };
+  }
+
   function numerosNoTexto(texto) {
     const partes = texto.match(/[+-]?\d+(?:[.,]\d+)*/g) || [];
     return partes.map(lerNumero).filter((valor) => valor !== null);
@@ -290,7 +347,7 @@ const Dominio = (() => {
     return mensagem.endsWith('?') ? 'duvida' : 'ambigua';
   }
 
-  return { conceitos, diagnostico, estado, rotulos, pontuar, pendentes, sugerir, confere, lerNumero, problema, totalVariantes, sortearVariante, identificarErro, desafio, tiposChat, numerosNoTexto, interpretarLocal, explicarConceito, lerComparacao };
+  return { conceitos, diagnostico, estado, rotulos, pontuar, pendentes, sugerir, confere, lerNumero, problema, totalVariantes, sortearVariante, identificarErro, desafio, tiposChat, numerosNoTexto, interpretarLocal, explicarConceito, lerComparacao, responderDuvida };
 })();
 
 if (typeof module !== 'undefined') module.exports = Dominio;

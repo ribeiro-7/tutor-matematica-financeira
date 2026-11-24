@@ -119,6 +119,7 @@ function montarTutor(consultar, chave = 'chave-ficticia', diagnosticoConcluido =
       caixa.value = texto;
       caixa.eventos.input();
     },
+    enviarFormulario: () => atividade.querySelector('form').eventos.submit({ preventDefault() {} }),
     opcaoMarcada: (opcao) => atividade.querySelector('fieldset').children[opcao + 1].querySelector('input').checked,
     marcar: (opcao) => atividade.querySelector('fieldset').children[opcao + 1].querySelector('input').eventos.change(),
     responder: (opcao) => {
@@ -160,6 +161,40 @@ test('C5 orienta a conversão de prazo e confere o resultado no JavaScript', asy
   await tutor.enviar('36');
   assert.equal(tutor.nota(5), 57);
   assert.equal(chamadas, 1);
+});
+
+test('o aluno pode tirar dúvidas antes do diagnóstico e recuperar a conversa depois de recarregar', () => {
+  const tutor = montarTutor(undefined, '', false);
+  tutor.acao('Tirar uma dúvida').eventos.click();
+  tutor.digitar('Qual a diferença entre juros simples e compostos?');
+  tutor.enviarFormulario();
+  assert.ok(tutor.acao(Dominio.responderDuvida('juros simples e compostos').resposta));
+  assert.equal(tutor.nota(10), null);
+  const recarregado = tutor.recarregar();
+  assert.ok(recarregado.acao('Tirar dúvidas'));
+  recarregado.digitar('Pode dar um exemplo?');
+  recarregado.enviarFormulario();
+  assert.ok(recarregado.acao(Dominio.responderDuvida('Pode dar um exemplo?', 10).resposta));
+  recarregado.acao('Voltar').eventos.click();
+  assert.ok(recarregado.acao('O que você quer estudar?'));
+});
+
+test('tirar uma dúvida durante o C9 preserva o desafio e deixa a fórmula para a consolidação', () => {
+  const tutor = montarTutor(undefined, '');
+  tutor.selecionar(9);
+  const enunciado = tutor.fala();
+  tutor.acao('Tirar uma dúvida').eventos.click();
+  const pergunta = 'Qual é a fórmula de juros compostos?';
+  const { resposta } = Dominio.responderDuvida(pergunta, null, true);
+  tutor.digitar(pergunta);
+  tutor.enviarFormulario();
+  assert.ok(tutor.acao(resposta));
+  assert.doesNotMatch(resposta, /M =|1\.331/);
+  tutor.acao('Voltar à prática').eventos.click();
+  assert.equal(tutor.fase(), 'exploracao');
+  assert.equal(tutor.fala(), enunciado);
+  assert.equal(tutor.tentativas(), 0);
+  assert.equal(tutor.nota(9), 50);
 });
 
 test('diagnóstico por objetivo avalia três pré-requisitos de C9 e mantém os demais nós como não avaliados', () => {
