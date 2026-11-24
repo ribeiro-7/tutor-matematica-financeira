@@ -48,7 +48,7 @@ const Dominio = (() => {
   const arredondar = (valor) => Math.round((valor + Number.EPSILON) * 100) / 100;
   const montante = (capital, taxa, meses) => capital * (1 + taxa / 100) ** meses;
   const valorPresente = (parcela, taxa, meses) => parcela / (1 + taxa / 100) ** meses;
-  const eventos = { diagnostico: 50, independente: 15, comDica: 7, erroInicial: 0, erroComDica: -5, revelacaoPrecoce: -3 };
+  const eventos = { diagnostico: 50, independente: 25, comDica: 15, erroInicial: 0, erroComDica: -5, revelacaoPrecoce: -3 };
   const pontuar = (nota, evento) => {
     if (nota === null && evento === 'revelacaoPrecoce') return null;
     return Math.min(100, Math.max(0, (nota ?? 0) + eventos[evento]));

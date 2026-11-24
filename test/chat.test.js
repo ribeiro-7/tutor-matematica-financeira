@@ -97,7 +97,7 @@ function montarTutor(consultar, chave = 'chave-ficticia', diagnosticoConcluido =
     selecionar: (id) => executar(`selecionar(${id})`),
     enviar: (texto) => executar(`enviarMensagem(sessoes.get(ativo), ${JSON.stringify(texto)}, ativo)`),
     fase: () => executar('sessoes.get(ativo).fase'),
-    fala: () => executar('sessoes.get(ativo).mensagens.at(-1).texto'),
+    fala: (posicao = -1) => executar('sessoes.get(ativo).mensagens.at(' + posicao + ').texto'),
     nota: (id) => executar(`notas[${id}]`),
     tentativas: () => executar('sessoes.get(ativo).tentativas.length'),
     praticar: () => executar('iniciarPratica(sessoes.get(ativo))'),
@@ -159,7 +159,7 @@ test('C5 orienta a conversão de prazo e confere o resultado no JavaScript', asy
   assert.equal(tutor.fala(), 'Você trouxe a dúvida “Multiplico ou divido”.\n\nCada ano contém 12 períodos mensais.');
   assert.equal(tutor.nota(5), 50);
   await tutor.enviar('36');
-  assert.equal(tutor.nota(5), 57);
+  assert.equal(tutor.nota(5), 65);
   assert.equal(chamadas, 1);
 });
 
@@ -305,7 +305,7 @@ test('o diagnóstico completo reaproveita as questões e preserva a nota do chat
   }
   tutor.acao('Praticar juros simples').eventos.click();
   await tutor.enviar('60');
-  assert.equal(tutor.nota(6), 15);
+  assert.equal(tutor.nota(6), 25);
   tutor.menuDiagnostico();
   tutor.acao('Completar diagnóstico · 12 questões restantes').eventos.click();
   for (const { id } of Dominio.conceitos.filter(({ id }) => id !== 3 && id !== 4)) {
@@ -314,7 +314,7 @@ test('o diagnóstico completo reaproveita as questões e preserva a nota do chat
     tutor.responder(id === 6 ? (correta + 1) % 4 : correta);
   }
   assert.ok(tutor.acao('13 de 14'));
-  assert.equal(tutor.nota(6), 15);
+  assert.equal(tutor.nota(6), 25);
   assert.equal(tutor.estado(6), 'initial');
   assert.equal(tutor.nota(3), 50);
   assert.ok(Dominio.conceitos.every(({ id }) => tutor.estado(id) !== 'unassessed'));
@@ -373,7 +373,7 @@ test('C9 esclarece dúvidas antes da fórmula e pontua na prática', async () =>
   assert.equal(tutor.nota(9), 50);
   tutor.praticar();
   await tutor.enviar('463,05');
-  assert.equal(tutor.nota(9), 65);
+  assert.equal(tutor.nota(9), 75);
 });
 
 test('C14 distingue o raciocínio e mantém a correção numérica após trocar de conceito', async () => {
@@ -400,7 +400,7 @@ test('C14 distingue o raciocínio e mantém a correção numérica após trocar 
   tutor.selecionar(5);
   concluir();
   await pendente;
-  assert.equal(tutor.nota(14), 57);
+  assert.equal(tutor.nota(14), 65);
   assert.equal(tutor.nota(5), 50);
   tutor.selecionar(14);
   assert.match(tutor.fala(), /^Na sua conta, você escreveu “Trouxe cada parcela a valor presente”/);
@@ -440,7 +440,7 @@ test('descarta gabarito, fórmulas, texto inventado e formatos desconhecidos na 
     assert.equal(tutor.nota(5), 50);
   }
   await tutor.enviar('36');
-  assert.equal(tutor.nota(5), 57);
+  assert.equal(tutor.nota(5), 65);
 });
 
 test('cota, resposta inválida e ausência de chave preservam o modo local', async () => {
@@ -465,7 +465,7 @@ test('C5 dá uma dica específica quando o estudante usa anos como períodos men
   assert.match(tutor.fala(), /coincide com o prazo em anos/);
   assert.equal(tutor.nota(5), 50);
   await tutor.enviar('36');
-  assert.equal(tutor.nota(5), 57);
+  assert.equal(tutor.nota(5), 65);
 });
 
 test('C9 reconhece o expoente em anos e permite revisar C5 sem abandonar a tentativa', async () => {
@@ -483,7 +483,7 @@ test('C9 reconhece o expoente em anos e permite revisar C5 sem abandonar a tenta
   tutor.selecionar(9);
   assert.match(tutor.fala(), /prazo em anos como expoente/);
   await tutor.enviar('450,73');
-  assert.equal(tutor.nota(9), 57);
+  assert.equal(tutor.nota(9), 65);
   assert.equal(tutor.acao('Revisar C5 · Período da taxa'), undefined);
 });
 
@@ -542,12 +542,13 @@ test('a comparação do C9 pede justificativa e mantém os pontos do acerto sem 
   assert.match(tutor.fala(), /explique o que acontece/);
   assert.equal(tutor.nota(9), 50);
   await tutor.enviar('Porque os juros incidem sobre o saldo do mês anterior.');
-  assert.match(tutor.fala(), /A conta A usa juros compostos/);
-  assert.equal(tutor.nota(9), 65);
+  assert.match(tutor.fala(-2), /A conta A usa juros compostos/);
+  assert.ok(tutor.acao('Fase concluída! Você ganhou 3 estrelas.'));
+  assert.equal(tutor.nota(9), 75);
   assert.equal(tutor.fase(), 'finalizada');
 });
 
-test('na comparação do C9, uma justificativa incorreta gera dica e o acerto seguinte vale sete', async () => {
+test('na comparação do C9, uma justificativa incorreta gera dica e o acerto seguinte vale quinze', async () => {
   const tutor = montarTutor(undefined, '');
   tutor.selecionar(9);
   tutor.sortear(0.75);
@@ -557,7 +558,7 @@ test('na comparação do C9, uma justificativa incorreta gera dica e o acerto se
   assert.equal(tutor.nota(9), 50);
   await tutor.enviar('Conta B, porque não soma um valor fixo, multiplica pelo mesmo fator a cada mês.');
   assert.match(tutor.fala(), /A conta B usa juros compostos/);
-  assert.equal(tutor.nota(9), 57);
+  assert.equal(tutor.nota(9), 65);
 });
 
 test('recarregar na mesma aba restaura a pergunta e as opções marcadas no diagnóstico', () => {
@@ -589,12 +590,12 @@ test('recarregar o chat preserva a dica, a nota, o exercício, o rascunho e o so
   const recarregado = tutor.recarregar();
   assert.equal(recarregado.ativo(), 5);
   assert.equal(recarregado.fase(), 'pratica');
-  assert.equal(recarregado.nota(5), 65);
+  assert.equal(recarregado.nota(5), 75);
   assert.equal(recarregado.variante(), variante);
   assert.equal(recarregado.fala(), dica);
   assert.equal(recarregado.rascunho(), '48');
   await recarregado.enviar('48');
-  assert.equal(recarregado.nota(5), 72);
+  assert.equal(recarregado.nota(5), 90);
   recarregado.acao('Novo exercício').eventos.click();
   assert.notEqual(recarregado.variante(), 0);
   assert.notEqual(recarregado.variante(), variante);
@@ -630,5 +631,5 @@ test('uma mensagem interrompida pelo recarregamento volta como rascunho', async 
   assert.equal(recarregado.rascunho(), resposta);
   await recarregado.enviar(resposta);
   assert.equal(chamadas, 2);
-  assert.equal(recarregado.nota(5), 65);
+  assert.equal(recarregado.nota(5), 75);
 });
