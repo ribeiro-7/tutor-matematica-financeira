@@ -61,7 +61,3 @@ Execute `node --test` para rodar os testes automatizados com respostas simuladas
 | [`dominio.js`](dominio.js) | Conceitos, pré-requisitos, questões, exercícios, gabaritos e regras de pontuação. |
 | [`app.js`](app.js) | Fluxo do diagnóstico, renderização do grafo e interação com o tutor. |
 | [`servidor.js`](servidor.js) | Servidor local e integração dos chats com o Gemini. |
-
-## Como manter este README atualizado
-
-Atualize este arquivo no mesmo commit ou pull request que alterar o comportamento documentado. Revise **Como rodar** se mudarem as dependências ou a configuração. Atualize a descrição do fluxo e o roteiro de teste quando mudarem o diagnóstico, o grafo, o chat ou a pontuação. Se a estrutura do código mudar, confira os caminhos e as responsabilidades na tabela.
